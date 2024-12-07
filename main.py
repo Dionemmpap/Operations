@@ -1,55 +1,20 @@
-import gurobipy as gp
-from gurobipy import GRB
+""" Receding Horizon Control for Trajectory Design """
 import numpy as np
 import heapq
 import matplotlib.pyplot as plt
+import gurobipy as gp
+from gurobipy import GRB
 
 
-def dijkstra(graph, start):
-    """Dijkstra's algorithm to find the shortest path from start to all other nodes."""
-    pq = [(0, start)]  # Priority queue (distance, node)
-    distances = {node: float('inf') for node in graph}
-    distances[start] = 0
+#Helper Functions
+def lines_intersect(p1, p2, q1, q2):
+    """Check if line segments p1-p2 and q1-q2 intersect."""
+    def ccw(a, b, c):
+        """Check if points a, b, c are listed in a counterclockwise order."""
+        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
 
-    while pq:
-        current_distance, current_node = heapq.heappop(pq)
-
-        if current_distance > distances[current_node]:
-            continue
-
-        for neighbor, weight in graph[current_node].items():
-            distance = current_distance + weight
-            if distance < distances[neighbor]:
-                distances[neighbor] = distance
-                heapq.heappush(pq, (distance, neighbor))
-
-    return distances
-
-
-def build_graph(map_boundary, obstacles, end_point):
-    """Build a graph from map boundaries, obstacle corners, and end_point."""
-    points = []
-
-    # Include corners of obstacles
-    for obstacle in obstacles:
-        points.extend(obstacle)
-
-    # Add endpoint to the points
-    points.append(end_point)
-
-    # Build graph with distances as weights
-    graph = {}
-    for i, point1 in enumerate(points):
-        graph[tuple(point1)] = {}
-        for j, point2 in enumerate(points):
-            if i != j and not is_path_blocked(point1, point2, obstacles):
-                dist = np.linalg.norm(np.array(point1) - np.array(point2))
-                graph[tuple(point1)][tuple(point2)] = dist
-                print(f"Added edge: {point1} -> {point2}, distance: {dist:.2f}")
-
-    return graph, points
-
-
+    # Two line segments intersect if and only if they straddle each other
+    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
 
 def is_path_blocked(point1, point2, obstacles):
     """Check if a straight line between two points intersects any obstacles."""
@@ -61,36 +26,6 @@ def is_path_blocked(point1, point2, obstacles):
                 print(f"Blocked: {point1} -> {point2} by {p1}-{p2}")
                 return True
     return False
-
-
-# def lines_intersect(p1, p2, q1, q2):
-#     """Check if line segments p1-p2 and q1-q2 intersect using Gurobi."""
-#     model = gp.Model()
-#     model.setParam('OutputFlag', 0)
-
-#     # Define variables for intersection points
-#     t = model.addVar(lb=0, ub=1, name="t")
-#     u = model.addVar(lb=0, ub=1, name="u")
-
-#     # Line equations
-#     model.addConstr((q1[0] - p1[0]) * t == (p2[0] - p1[0]) * u)
-#     model.addConstr((q1[1] - p1[1]) * t == (p2[1] - p1[1]) * u)
-
-#     # Solve the model
-#     model.optimize()
-#     if model.status == GRB.OPTIMAL:
-#         return True
-
-#     return False
-def lines_intersect(p1, p2, q1, q2):
-    """Check if line segments p1-p2 and q1-q2 intersect."""
-    def ccw(a, b, c):
-        """Check if points a, b, c are listed in a counterclockwise order."""
-        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
-
-    # Two line segments intersect if and only if they straddle each other
-    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
-
 
 def visualize_map(map_boundary, obstacles, graph, end_point):
     """Visualize the map, obstacles, and network."""
@@ -121,6 +56,65 @@ def visualize_map(map_boundary, obstacles, graph, end_point):
     plt.show()
 
 
+class TrajectoryDesign():
+    """Class to design a trajectory using receding horizon control."""
+    def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
+        self.map_boundary = map_boundary
+        self.obstacles = obstacles
+        self.end_point = end_point
+        self.start_point = start_point
+        self.tau = tau
+        self.graph, self.points = self.build_graph()
+        self.distances = self.dijkstra()
+
+    def build_graph(self):
+        """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
+        points = []
+        for obstacle in self.obstacles:
+            points.extend(obstacle)
+        points.append(self.end_point)
+
+        graph = {}
+        for i, point1 in enumerate(points):
+            graph[tuple(point1)] = {}
+            for j, point2 in enumerate(points):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles):
+                    dist = np.linalg.norm(np.array(point1) - np.array(point2))
+                    graph[tuple(point1)][tuple(point2)] = dist
+
+        return graph, points
+
+    
+    def dijkstra(self):
+        """Dijkstra's algorithm to find the shortest path from endpoint to all other nodes."""
+        edges = [(node, neighbor, weight) for node, neighbors in self.graph.items() for neighbor, weight in neighbors.items()]
+        adj = {node: [] for node in self.graph}
+        for node, neighbor, weight in edges:
+            adj[node].append((neighbor, weight))
+            adj[neighbor].append((node, weight))
+
+        shortest = {} # Map vertex to its shortest distance from the endpoint
+        minHeap = [[0, tuple(self.end_point)]]
+        while minHeap:
+            w1, n1 = heapq.heappop(minHeap)
+            if n1 in shortest:
+                continue
+            shortest[n1] = w1
+            for n2, w2 in adj[n1]:
+                if n2 not in shortest:
+                    heapq.heappush(minHeap, [w1 + w2, n2])
+
+    
+        return shortest
+
+    def receding_horizon(self):
+        pass
+
+    def plot(self):
+        """Plot the map, obstacles, and network."""
+        visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
+
+    
 def main():
     # Define map boundary and obstacles
     map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
@@ -128,26 +122,19 @@ def main():
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [9, 9]
+    end_point = [8, 3]
 
-    # Build the graph
-    graph, points = build_graph(map_boundary, obstacles, end_point)
-
-    # Run Dijkstra's algorithm from the endpoint
-    distances = dijkstra(graph, tuple(end_point))
-
-    # Print distances for each obstacle corner to the endpoint
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
+    td.plot()
+    print(td.graph)
+    
+    # # Print distances for each obstacle corner to the endpoint
     print("Distances from obstacle corners to endpoint:")
-    for obstacle in obstacles:
+    for obstacle in td.obstacles:
         for corner in obstacle:
-            print(f"Corner {corner} -> Endpoint: {distances[tuple(corner)]:.2f}")
-
-    # Visualize the map and graph
-    visualize_map(map_boundary, obstacles, graph, end_point)
-    graph, points = build_graph(map_boundary, obstacles, end_point)
-    print("Graph connections:")
-    for node, neighbors in graph.items():
-        print(f"{node}: {neighbors}")
+            print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
+   
+    
 
 if __name__ == "__main__":
     main()
