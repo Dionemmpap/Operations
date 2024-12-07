@@ -23,3 +23,26 @@ def build_graph():
             if point1 != point2:
                 assert graph[tuple(point1)][tuple(point2)] == graph[tuple(point2)][tuple(point1)] == distance(point1, point2)
 
+
+
+
+#gurobi# 
+# def lines_intersect(p1, p2, q1, q2):
+#     """Check if line segments p1-p2 and q1-q2 intersect using Gurobi."""
+#     model = gp.Model()
+#     model.setParam('OutputFlag', 0)
+
+#     # Define variables for intersection points
+#     t = model.addVar(lb=0, ub=1, name="t")
+#     u = model.addVar(lb=0, ub=1, name="u")
+
+#     # Line equations
+#     model.addConstr((q1[0] - p1[0]) * t == (p2[0] - p1[0]) * u)
+#     model.addConstr((q1[1] - p1[1]) * t == (p2[1] - p1[1]) * u)
+
+#     # Solve the model
+#     model.optimize()
+#     if model.status == GRB.OPTIMAL:
+#         return True
+
+#     return False

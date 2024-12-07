@@ -6,8 +6,7 @@ import gurobipy as gp
 from gurobipy import GRB
 
 
-
-
+#Helper Functions
 def lines_intersect(p1, p2, q1, q2):
     """Check if line segments p1-p2 and q1-q2 intersect."""
     def ccw(a, b, c):
@@ -27,29 +26,6 @@ def is_path_blocked(point1, point2, obstacles):
                 print(f"Blocked: {point1} -> {point2} by {p1}-{p2}")
                 return True
     return False
-
-
-# def lines_intersect(p1, p2, q1, q2):
-#     """Check if line segments p1-p2 and q1-q2 intersect using Gurobi."""
-#     model = gp.Model()
-#     model.setParam('OutputFlag', 0)
-
-#     # Define variables for intersection points
-#     t = model.addVar(lb=0, ub=1, name="t")
-#     u = model.addVar(lb=0, ub=1, name="u")
-
-#     # Line equations
-#     model.addConstr((q1[0] - p1[0]) * t == (p2[0] - p1[0]) * u)
-#     model.addConstr((q1[1] - p1[1]) * t == (p2[1] - p1[1]) * u)
-
-#     # Solve the model
-#     model.optimize()
-#     if model.status == GRB.OPTIMAL:
-#         return True
-
-#     return False
-
-
 
 def visualize_map(map_boundary, obstacles, graph, end_point):
     """Visualize the map, obstacles, and network."""
@@ -108,26 +84,29 @@ class TrajectoryDesign():
 
         return graph, points
 
+    
     def dijkstra(self):
         """Dijkstra's algorithm to find the shortest path from endpoint to all other nodes."""
-        pq = [(0, tuple(self.end_point))]
-        distances = {node: float('inf') for node in self.graph}
-        distances[tuple(self.end_point)] = 0
+        edges = [(node, neighbor, weight) for node, neighbors in self.graph.items() for neighbor, weight in neighbors.items()]
+        adj = {node: [] for node in self.graph}
+        for node, neighbor, weight in edges:
+            adj[node].append((neighbor, weight))
+            adj[neighbor].append((node, weight))
 
-        while pq:
-            current_distance, current_node = heapq.heappop(pq)
-
-            if current_distance > distances[current_node]:
+        shortest = {} # Map vertex to its shortest distance from the endpoint
+        minHeap = [[0, tuple(self.end_point)]]
+        while minHeap:
+            w1, n1 = heapq.heappop(minHeap)
+            if n1 in shortest:
                 continue
+            shortest[n1] = w1
+            for n2, w2 in adj[n1]:
+                if n2 not in shortest:
+                    heapq.heappush(minHeap, [w1 + w2, n2])
 
-            for neighbor, weight in self.graph[current_node].items():
-                distance = current_distance + weight
-                if distance < distances[neighbor]:
-                    distances[neighbor] = distance
-                    heapq.heappush(pq, (distance, neighbor))
-        
-        return distances
     
+        return shortest
+
     def receding_horizon(self):
         pass
 
@@ -143,10 +122,9 @@ def main():
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [9, 9]
+    end_point = [8, 3]
 
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
-
     td.plot()
     print(td.graph)
     
@@ -155,7 +133,7 @@ def main():
     for obstacle in td.obstacles:
         for corner in obstacle:
             print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
-
+   
     
 
 if __name__ == "__main__":
