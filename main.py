@@ -108,11 +108,71 @@ class TrajectoryDesign():
         return shortest
 
     def receding_horizon(self):
-        pass
+        current_position = self.start_point
+        self.trajectory = []
+        while current_position != self.end_point:
+            # Plan a trajectory from the current position to the endpoint
+            next_position = self.plan_trajectory(current_position)
+            print(f"Moving from {current_position} to {next_position}")
+            #store the trajectory
+            self.trajectory.append(next_position)
 
-    def plot(self):
+            # Move to the next position
+            current_position = next_position
+
+    def plan_trajectory(self, current_position):
+        """Plan a trajectory from the current position to the endpoint."""
+        # #find the neighbors of the current position
+        # neighbors = self.graph[tuple(current_position)]
+        # #find the neighbor with the shortest distance to the endpoint
+        # point_opt = min(neighbors, key=lambda x: self.distances[x])
+        # #travel fraction tau of the distance towards the selected neighbor
+        # point = np.array(current_position) + self.tau * (np.array(point_opt) - np.array(current_position))
+
+        #Find visible nodes from the current position
+        visible_nodes = []
+        for node in self.points:
+            if not is_path_blocked(current_position, node, self.obstacles):
+                visible_nodes.append(node)
+        #Find the node with the shortest distance to the endpoint: f(x(N)) = |x(N)-x_v,j| + c_j, where x(N) is the current position, x_v,j is the visible node, and c_j is the distance from the visible node to the endpoint
+        objective = gp.Model()
+        objective.setParam('OutputFlag', 0)
+        x = objective.addVars(len(visible_nodes), vtype=GRB.BINARY, name='x')
+        objective.setObjective(sum(x[j] * (np.linalg.norm(np.array(current_position) - np.array(visible_nodes[j])) + self.distances[tuple(visible_nodes[j])]) for j in range(len(visible_nodes))), GRB.MINIMIZE)
+        objective.addConstr(sum(x[j] for j in range(len(visible_nodes))) == 1)
+        objective.optimize()
+        point = np.array(current_position) + self.tau * (np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position))
+                                                         
+        return point
+            
+    
+
+
+    def plot(self,plt_traj=False):
         """Plot the map, obstacles, and network."""
-        visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
+        # visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
+        #add the trajectory to the plot
+        fig, ax = plt.subplots()
+        boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
+        ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
+        for i, obstacle in enumerate(self.obstacles):
+            obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
+            ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
+        for node, neighbors in self.graph.items():
+            for neighbor in neighbors:
+                ax.plot(
+                    [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
+                )
+        ax.scatter(*self.end_point, color='red', label='Endpoint')
+        ax.scatter(*self.start_point, color='green', label='Startpoint')
+        if plt_traj:
+            for i in range(len(self.trajectory)-1):
+                ax.plot([self.trajectory[i][0], self.trajectory[i+1][0]], [self.trajectory[i][1], self.trajectory[i+1][1]], color='green')
+        ax.set_aspect('equal')
+        plt.legend()
+        plt.title("Map with Obstacles and Network")
+        plt.show()
+
 
     
 def main():
@@ -122,11 +182,12 @@ def main():
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [8, 3]
+    end_point = [9, 9]
 
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
-    td.plot()
-    # print(td.graph)
+
+    td.receding_horizon()
+    td.plot(plt_traj=False)
     
     # # Print distances for each obstacle corner to the endpoint
     print("Distances from obstacle corners to endpoint:")
