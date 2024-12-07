@@ -148,6 +148,7 @@ def main():
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
 
     td.plot()
+    print(td.graph)
     
     # # Print distances for each obstacle corner to the endpoint
     print("Distances from obstacle corners to endpoint:")
