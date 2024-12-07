@@ -1,0 +1,15 @@
+[
+  "test/test_main.py::test_build_graph",
+  "test/test_main.py::test_collinear_non_overlapping",
+  "test/test_main.py::test_collinear_overlapping",
+  "test/test_main.py::test_dijkstra",
+  "test/test_main.py::test_intersecting_at_endpoint",
+  "test/test_main.py::test_intersecting_lines",
+  "test/test_main.py::test_non_intersecting_non_parallel_lines",
+  "test/test_main.py::test_non_intersecting_parallel_lines",
+  "test/test_main.py::test_path_blocked_by_multiple_obstacles",
+  "test/test_main.py::test_path_blocked_by_single_obstacle",
+  "test/test_main.py::test_path_not_blocked",
+  "test/test_main.py::test_path_tangent_to_obstacle",
+  "test/test_main.py::test_path_with_no_obstacles"
+]

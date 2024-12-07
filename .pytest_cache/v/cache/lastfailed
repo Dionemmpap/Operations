@@ -1,0 +1,4 @@
+{
+  "test/test_main.py::test_intersecting_at_endpoint": true,
+  "test/test_main.py::test_collinear_overlapping": true
+}
