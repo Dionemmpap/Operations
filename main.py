@@ -122,12 +122,6 @@ class TrajectoryDesign():
 
     def plan_trajectory(self, current_position):
         """Plan a trajectory from the current position to the endpoint."""
-        # #find the neighbors of the current position
-        # neighbors = self.graph[tuple(current_position)]
-        # #find the neighbor with the shortest distance to the endpoint
-        # point_opt = min(neighbors, key=lambda x: self.distances[x])
-        # #travel fraction tau of the distance towards the selected neighbor
-        # point = np.array(current_position) + self.tau * (np.array(point_opt) - np.array(current_position))
 
         #Find visible nodes from the current position
         visible_nodes = []
