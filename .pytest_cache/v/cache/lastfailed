@@ -10,5 +10,6 @@
   "test/test_main.py::test_path_not_blocked": true,
   "test/test_main.py::test_path_blocked_by_multiple_obstacles": true,
   "test/test_main.py::test_path_with_no_obstacles": true,
-  "test/test_main.py::test_path_tangent_to_obstacle": true
+  "test/test_main.py::test_path_tangent_to_obstacle": true,
+  "test/test_main.py": true
 }
