@@ -110,7 +110,7 @@ class TrajectoryDesign():
     def receding_horizon(self):
         current_position = self.start_point
         self.trajectory = []
-        while not np.allclose(current_position, self.end_point, atol=1e-6):
+        while not np.allclose(current_position, self.end_point, atol=1e-1):
             # Plan a trajectory from the current position to the endpoint
             next_position = self.plan_trajectory(current_position)
             print(f"Moving from {current_position} to {next_position}")
@@ -119,6 +119,7 @@ class TrajectoryDesign():
 
             # Move to the next position
             current_position = next_position
+            #self.plot(plt_traj=True)
 
     def plan_trajectory(self, current_position):
         """Plan a trajectory from the current position to the endpoint."""
@@ -135,8 +136,9 @@ class TrajectoryDesign():
         objective.setObjective(sum(x[j] * (np.linalg.norm(np.array(current_position) - np.array(visible_nodes[j])) + self.distances[tuple(visible_nodes[j])]) for j in range(len(visible_nodes))), GRB.MINIMIZE)
         objective.addConstr(sum(x[j] for j in range(len(visible_nodes))) == 1)
         objective.optimize()
-        point = np.array(current_position) + self.tau * (np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position))
-                                                         
+        direction = np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position)
+        direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
+        point = np.array(current_position) + self.tau * direction
         return point
             
     
@@ -176,12 +178,12 @@ def main():
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [9, 9]
+    end_point = [5, 5]
 
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
 
     td.receding_horizon()
-    td.plot(plt_traj=False)
+    td.plot(plt_traj=True)
     
     # # Print distances for each obstacle corner to the endpoint
     print("Distances from obstacle corners to endpoint:")
