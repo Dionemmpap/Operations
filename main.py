@@ -110,7 +110,7 @@ class TrajectoryDesign():
     def receding_horizon(self):
         current_position = self.start_point
         self.trajectory = []
-        while current_position != self.end_point:
+        while not np.allclose(current_position, self.end_point, atol=1e-6):
             # Plan a trajectory from the current position to the endpoint
             next_position = self.plan_trajectory(current_position)
             print(f"Moving from {current_position} to {next_position}")
