@@ -7,38 +7,46 @@ from gurobipy import GRB
 
 
 #Helper Functions
-def lines_intersect(p1, p2, q1, q2):
-    """Check if line segments p1-p2 and q1-q2 intersect."""
-    def ccw(a, b, c):
-        """Check if points a, b, c are listed in a counterclockwise order."""
-        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
+def is_point_in_polygon(point, polygon):
+    """Check if a point is inside a polygon using the ray-casting algorithm."""
+    x, y = point
+    n = len(polygon)
+    inside = False
 
-    # Two line segments intersect if and only if they straddle each other
-    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
+    p1x, p1y = polygon[0]
+    for i in range(n + 1):
+        p2x, p2y = polygon[i % n]
+        if y > min(p1y, p2y):
+            if y <= max(p1y, p2y):
+                if x <= max(p1x, p2x):
+                    if p1y != p2y:
+                        xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                    if p1x == p2x or x <= xinters:
+                        inside = not inside
+        p1x, p1y = p2x, p2y
 
-def is_path_blocked(point1, point2, obstacles):
-    """Check if a straight line between two points intersects any obstacles."""
+    return inside
+
+def is_path_blocked(point1, point2, obstacles, num_samples=100):
+    """
+    Check if a straight line between two points intersects any obstacles.
+    Discretizes the line into a series of points and checks if any point is inside an obstacle.
+    """
+    # Discretize the line segment into points
+    points = [
+        np.array(point1) + t * (np.array(point2) - np.array(point1))
+        for t in np.linspace(0, 1, num_samples)
+    ]
+
+    # Check if any discretized point lies inside an obstacle
     for obstacle in obstacles:
-        for i in range(len(obstacle)):
-            p1 = obstacle[i]
-            p2 = obstacle[(i + 1) % len(obstacle)]
-            if lines_intersect(point1, point2, p1, p2):
-                print(f"Blocked: {point1} -> {point2} by {p1}-{p2}")
+        for point in points:
+            if is_point_in_polygon(point, obstacle):
+                print(f"Path blocked at point {point} within obstacle {obstacle}")
                 return True
+
     return False
 
-def visualize_map(map_boundary, obstacles, graph, end_point):
-    """Visualize the map, obstacles, and network."""
-    fig, ax = plt.subplots()
-
-    # Plot map boundary
-    boundary_x, boundary_y = zip(*map_boundary + [map_boundary[0]])
-    ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
-
-    # Plot obstacles
-    for i, obstacle in enumerate(obstacles):
-        obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
-        ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
 
     # Plot graph edges
     for node, neighbors in graph.items():
@@ -119,7 +127,7 @@ class TrajectoryDesign():
 
             # Move to the next position
             current_position = next_position
-            #self.plot(plt_traj=True)
+            # self.plot(plt_traj=True)
 
     def plan_trajectory(self, current_position):
         """Plan a trajectory from the current position to the endpoint."""
@@ -144,7 +152,7 @@ class TrajectoryDesign():
     
 
 
-    def plot(self,plt_traj=False):
+    def plot(self, plt_graph=False, plt_traj=False):
         """Plot the map, obstacles, and network."""
         # visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
         #add the trajectory to the plot
@@ -152,13 +160,15 @@ class TrajectoryDesign():
         boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
         ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
         for i, obstacle in enumerate(self.obstacles):
-            obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
+            obstacle_x, obstacle_y = zip(*(list(obstacle) + [obstacle[0]]))
+
             ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
-        for node, neighbors in self.graph.items():
-            for neighbor in neighbors:
-                ax.plot(
-                    [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
-                )
+        if plt_graph:
+            for node, neighbors in self.graph.items():
+                for neighbor in neighbors:
+                    ax.plot(
+                        [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
+                    )
         ax.scatter(*self.end_point, color='red', label='Endpoint')
         ax.scatter(*self.start_point, color='green', label='Startpoint')
         if plt_traj:
@@ -170,16 +180,21 @@ class TrajectoryDesign():
         plt.show()
 
 
-    
+
+import matplotlib.pyplot as plt
+import numpy as np
+import random
+
+
+
 def main():
     # Define map boundary and obstacles
-    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    map_boundary = [[0, 0], [100, 0], [100, 20], [0, 20]]
     obstacles = [
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [5, 5]
-
+    end_point = [6,9]
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
 
     td.receding_horizon()
