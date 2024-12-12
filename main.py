@@ -7,12 +7,31 @@ from gurobipy import GRB
 
 
 #Helper Functions
+def equal_points(p1, p2):
+    """Check if two points are equal."""
+    return np.allclose(p1, p2, atol=1e-1)
+
+
+def path_is_diagonal_of_obstacle(p1, p2, obstacles):
+    """Check if a straight line between two points is not the diagnal a the obstacle."""
+    def check_diagonal(p1, p2, obstacle, n):
+        return equal_points(p1, obstacle[n%4]) and equal_points(p2, obstacle[(n+2)%4])
+    
+    for obstacle in obstacles:
+        for i in range(4):
+            if check_diagonal(p1, p2, obstacle, i):
+                return False
+    return True
+
 def lines_intersect(p1, p2, q1, q2):
     """Check if line segments p1-p2 and q1-q2 intersect."""
     def ccw(a, b, c):
         """Check if points a, b, c are listed in a counterclockwise order."""
         return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
 
+    if equal_points(p1, q1) or equal_points(p1, q2) or equal_points(p2, q1) or equal_points(p2, q2):
+        return False
+    
     # Two line segments intersect if and only if they straddle each other
     return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
 
@@ -78,7 +97,7 @@ class TrajectoryDesign():
         for i, point1 in enumerate(points):
             graph[tuple(point1)] = {}
             for j, point2 in enumerate(points):
-                if i != j and not is_path_blocked(point1, point2, self.obstacles):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles) and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
 
@@ -178,7 +197,7 @@ def main():
         [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
         [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
     ]
-    end_point = [5, 5]
+    end_point = [6, 5]
 
     td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
 
