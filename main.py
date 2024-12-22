@@ -4,12 +4,31 @@ import heapq
 import matplotlib.pyplot as plt
 import gurobipy as gp
 from gurobipy import GRB
+from shapely.geometry import Point, Polygon, LineString
 
 
 #Helper Functions
 def equal_points(p1, p2):
     """Check if two points are equal."""
     return np.allclose(p1, p2, atol=1e-1)
+
+def point_inside_obstacle(point, obstacles):
+    """
+    Check if a point is inside any obstacle.
+    
+    Args:
+        point (list or tuple): The [x, y] coordinates of the point.
+        obstacles (list of lists): List of obstacles, where each obstacle is a list of [x, y] vertices.
+    
+    Returns:
+        bool: True if the point is inside any obstacle, False otherwise.
+    """
+    point_geom = Point(point)
+    for obstacle in obstacles:
+        obstacle_polygon = Polygon(obstacle)
+        if obstacle_polygon.contains(point_geom):
+            return True
+    return False
 
 
 def path_is_diagonal_of_obstacle(p1, p2, obstacles):
@@ -36,15 +55,14 @@ def lines_intersect(p1, p2, q1, q2):
     return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
 
 def is_path_blocked(point1, point2, obstacles):
-    """Check if a straight line between two points intersects any obstacles."""
+    """Check if the straight line between two points intersects or lies within any obstacle."""
+    line = LineString([point1, point2])
     for obstacle in obstacles:
-        for i in range(len(obstacle)):
-            p1 = obstacle[i]
-            p2 = obstacle[(i + 1) % len(obstacle)]
-            if lines_intersect(point1, point2, p1, p2):
-                print(f"Blocked: {point1} -> {point2} by {p1}-{p2}")
-                return True
+        polygon = Polygon(obstacle)
+        if line.crosses(polygon) or line.within(polygon):
+            return True
     return False
+
 
 def visualize_map(map_boundary, obstacles, graph, end_point):
     """Visualize the map, obstacles, and network."""
@@ -75,16 +93,60 @@ def visualize_map(map_boundary, obstacles, graph, end_point):
     plt.show()
 
 
+
+def get_obstacles(map_boundary, num_obstacles):
+    obstacles = []
+    for _ in range(num_obstacles):
+        x1 = np.random.uniform(0.15*map_boundary[0][0], 0.75*map_boundary[1][0])
+        y1 = np.random.uniform(0.15*map_boundary[0][1], 0.75*map_boundary[2][1])
+        width = np.random.uniform(0.1*map_boundary[1][0], 0.25*map_boundary[1][0])
+        height = np.random.uniform(0.1*map_boundary[2][1], 0.25*map_boundary[2][1])
+        x2 = x1 + width
+        y2 = y1
+        x3 = x2
+        y3 = y1 + height
+        x4 = x1
+        y4 = y3
+        obstacles.append([[x1, y1], [x2, y2], [x3, y3], [x4, y4]])
+
+
+    return obstacles
+
+
+
 class TrajectoryDesign():
     """Class to design a trajectory using receding horizon control."""
     def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
         self.map_boundary = map_boundary
-        self.obstacles = obstacles
+        #self.obstacles = obstacles
+        self.obstacles = self.merge_intersecting_obstacles(obstacles)
         self.end_point = end_point
         self.start_point = start_point
         self.tau = tau
         self.graph, self.points = self.build_graph()
         self.distances = self.dijkstra()
+
+    def merge_intersecting_obstacles(self, obstacles):
+        """Merge intersecting obstacles into a single larger obstacle."""
+        from shapely.geometry import Polygon, MultiPolygon
+
+        # Convert obstacles to shapely Polygons
+        polygons = [Polygon(obstacle) for obstacle in obstacles]
+
+        # Merge all polygons using buffer(0)
+        merged = MultiPolygon(polygons).buffer(0)
+
+        # Check if merged result is a single Polygon
+        if isinstance(merged, Polygon):
+            return [list(merged.exterior.coords[:-1])]
+
+        # Check if merged result is a MultiPolygon
+        elif isinstance(merged, MultiPolygon):
+            return [list(poly.exterior.coords[:-1]) for poly in merged.geoms]
+
+        # If no merging occurs (fallback)
+        return obstacles
+
 
     def build_graph(self):
         """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
@@ -142,25 +204,46 @@ class TrajectoryDesign():
 
     def plan_trajectory(self, current_position):
         """Plan a trajectory from the current position to the endpoint."""
-
-        #Find visible nodes from the current position
+        # Find visible nodes from the current position
         visible_nodes = []
         for node in self.points:
             if not is_path_blocked(current_position, node, self.obstacles):
                 visible_nodes.append(node)
-        #Find the node with the shortest distance to the endpoint: f(x(N)) = |x(N)-x_v,j| + c_j, where x(N) is the current position, x_v,j is the visible node, and c_j is the distance from the visible node to the endpoint
+
+        # Filter out trajectories ending inside obstacles
+        valid_nodes = [
+            node for node in visible_nodes if not point_inside_obstacle(node, self.obstacles)
+        ]
+
+        if not valid_nodes:
+            raise ValueError("No valid trajectories available due to obstacles.")
+
+        # Solve optimization problem to find the best node
         objective = gp.Model()
         objective.setParam('OutputFlag', 0)
-        x = objective.addVars(len(visible_nodes), vtype=GRB.BINARY, name='x')
-        objective.setObjective(sum(x[j] * (np.linalg.norm(np.array(current_position) - np.array(visible_nodes[j])) + self.distances[tuple(visible_nodes[j])]) for j in range(len(visible_nodes))), GRB.MINIMIZE)
-        objective.addConstr(sum(x[j] for j in range(len(visible_nodes))) == 1)
+        x = objective.addVars(len(valid_nodes), vtype=GRB.BINARY, name='x')
+        objective.setObjective(
+            sum(
+                x[j] * (
+                    np.linalg.norm(np.array(current_position) - np.array(valid_nodes[j]))
+                    + self.distances[tuple(valid_nodes[j])]
+                ) for j in range(len(valid_nodes))
+            ), GRB.MINIMIZE
+        )
+        objective.addConstr(sum(x[j] for j in range(len(valid_nodes))) == 1)
         objective.optimize()
-        direction = np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position)
+
+        # Calculate the proposed next position
+        direction = np.array(valid_nodes[np.argmax([x[j].x for j in range(len(valid_nodes))])]) - np.array(current_position)
         direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
-        point = np.array(current_position) + self.tau * direction
-        return point
-            
-    
+        proposed_point = np.array(current_position) + self.tau * direction
+
+        # Validate the proposed point
+        if point_inside_obstacle(proposed_point, self.obstacles):
+            raise ValueError(f"Proposed trajectory point {proposed_point} is inside an obstacle.")
+
+        return proposed_point
+
 
 
     def plot(self,plt_traj=False):
@@ -192,14 +275,24 @@ class TrajectoryDesign():
     
 def main():
     # Define map boundary and obstacles
-    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
-    obstacles = [
-        [[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
-        [[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
-    ]
-    end_point = [6, 5]
+    map_boundary = [[0, 0], [20, 0], [20, 10], [0, 10]]
+    #obstacles = [
+        #[[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
+        #[[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
+        #[[2, 4], [4, 4], [4, 6], [2, 6]],  # Obstacle 3
+        #[[1, 2], [2, 2], [2, 3], [1, 3]]  # Obstacle 4
+        #[[1, 1], [3, 1], [3, 6], [2, 6], [2, 2], [1, 2]],  # Obstacle 1
+        #[[1, 1], [3, 1], [3, 6], [1, 6], [1, 5], [2, 5], [2, 2], [1, 2]],  # Obstacle 2
+        #[[1, 1], [2, 1], [2, 2], [1, 2]],  # Obstacle 1
+        #[[2 ,1], [3, 1], [3, 6], [2, 6]],  # Obstacle 2
+        #[[1, 5], [2, 5], [2, 6], [1, 6]],  # Obstacle 3
+    #]
+    obstacles = get_obstacles(map_boundary, 8)
+    end_point = [19.9, 5]
 
-    td = TrajectoryDesign(map_boundary, obstacles, end_point, [1, 1], 0.1)
+    visualize_map(map_boundary, obstacles, {}, end_point)
+
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0.1, 5], 0.1)
 
     td.receding_horizon()
     td.plot(plt_traj=True)
