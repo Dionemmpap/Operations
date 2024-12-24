@@ -3,7 +3,7 @@ import sys
 import pytest
 
 sys.path.append('.')
-from main import TrajectoryDesign, is_path_blocked, lines_intersect
+from main import TrajectoryDesign, is_path_blocked, get_obstacles, point_inside_obstacle, merge_intersecting_obstacles
 
 
 #helper function to calculate distance between two points
@@ -47,20 +47,32 @@ def test_dijkstra():
 
 
 
+def test_get_obstacles():
+    #Dimensions of obstacles generated fall within the expected range:
+        # 1) Bottom left corner of obstacle is within 15% and 75% of the map boundary width & height
+        # 2) The width and the height of the obstacle are between 10% and 25% of the width and height of the map boundary
+    test_obstacle = get_obstacles(map_boundary, 1)
+    #Assert that the bottom left corner of the obstacle has x - coordinate within 15% and 75% of the map boundary width
+    #Assert that the bottom left corner of the obstacle has y - coordinate within 15% and 75% of the map boundary height
+    #Assert that the width of the obstacle is between 10% and 25% of the width of the map boundary
+    #Assert that the height of the obstacle is between 10% and 25% of the height of the map boundary
+    assert 0.15*map_boundary[1][0] <= test_obstacle[0][0][0] <= 0.75*map_boundary[1][0]
+    assert 0.15*map_boundary[1][1] <= test_obstacle[0][0][1] <= 0.75*map_boundary[1][1]
+    assert 0.1*map_boundary[1][0] <= test_obstacle[0][1][0] - test_obstacle[0][0][0] <= 0.25*map_boundary[1][0]
+    assert 0.1*map_boundary[1][1] <= test_obstacle[0][2][1] - test_obstacle[0][0][1] <= 0.25*map_boundary[1][1]
 
+def test_point_inside_obstacle():
+    #Point is inside an obstacle
+    assert point_inside_obstacle([3, 3], obstacles) is True
+    #Point is not inside an obstacle
+    assert point_inside_obstacle([5, 5], obstacles) is False
 
-def test_intersecting_lines():
-    # Lines intersect
-    assert lines_intersect([0, 0], [2, 2], [0, 2], [2, 0]) is True
-
-def test_non_intersecting_parallel_lines():
-    # Parallel lines do not intersect
-    assert lines_intersect([0, 0], [2, 0], [0, 1], [2, 1]) is False
-
-def test_non_intersecting_non_parallel_lines():
-    # Non-parallel lines that do not cross
-    assert lines_intersect([0, 0], [1, 1], [2, 2], [3, 3]) is False
-
+def test_merge_intersecting_obstacles():
+    #Test whether the function correctly merges intersecting obstacles
+    obstacles = [[[1, 1], [3, 1], [3, 3], [1, 3]], [[2, 2], [4, 2], [4, 4], [2, 4]]]
+    #Function should return all corners of the merged obstacle (here I'm using sets so that the order doesn't matter)
+    assert set(merge_intersecting_obstacles(obstacles)) == {[[1, 1], [3, 1], [3, 2], [1, 3], [2, 3], [4, 2], [4, 4], [2, 4]]}
+    
 
 
 def test_path_blocked_by_single_obstacle():

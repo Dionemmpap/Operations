@@ -4,13 +4,13 @@ import heapq
 import matplotlib.pyplot as plt
 import gurobipy as gp
 from gurobipy import GRB
-from shapely.geometry import Point, Polygon, LineString
+from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 
 
 #Helper Functions
-def equal_points(p1, p2):
-    """Check if two points are equal."""
-    return np.allclose(p1, p2, atol=1e-1)
+#def equal_points(p1, p2):
+#    """Check if two points are equal."""
+#    return np.allclose(p1, p2, atol=1e-1)
 
 def point_inside_obstacle(point, obstacles):
     """
@@ -31,28 +31,28 @@ def point_inside_obstacle(point, obstacles):
     return False
 
 
-def path_is_diagonal_of_obstacle(p1, p2, obstacles):
-    """Check if a straight line between two points is not the diagnal a the obstacle."""
-    def check_diagonal(p1, p2, obstacle, n):
-        return equal_points(p1, obstacle[n%4]) and equal_points(p2, obstacle[(n+2)%4])
-    
-    for obstacle in obstacles:
-        for i in range(4):
-            if check_diagonal(p1, p2, obstacle, i):
-                return False
-    return True
+#def path_is_diagonal_of_obstacle(p1, p2, obstacles):
+#    """Check if a straight line between two points is not the diagnal a the obstacle."""
+#    def check_diagonal(p1, p2, obstacle, n):
+#        return equal_points(p1, obstacle[n%4]) and equal_points(p2, obstacle[(n+2)%4])
+#    
+#    for obstacle in obstacles:
+#        for i in range(4):
+#            if check_diagonal(p1, p2, obstacle, i):
+#                return False
+#    return True
 
-def lines_intersect(p1, p2, q1, q2):
-    """Check if line segments p1-p2 and q1-q2 intersect."""
-    def ccw(a, b, c):
-        """Check if points a, b, c are listed in a counterclockwise order."""
-        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
-
-    if equal_points(p1, q1) or equal_points(p1, q2) or equal_points(p2, q1) or equal_points(p2, q2):
-        return False
-    
-    # Two line segments intersect if and only if they straddle each other
-    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
+#def lines_intersect(p1, p2, q1, q2):
+#    """Check if line segments p1-p2 and q1-q2 intersect."""
+#    def ccw(a, b, c):
+#        """Check if points a, b, c are listed in a counterclockwise order."""
+#        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
+#
+#    if equal_points(p1, q1) or equal_points(p1, q2) or equal_points(p2, q1) or equal_points(p2, q2):
+#        return False
+#    
+#    # Two line segments intersect if and only if they straddle each other
+#    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
 
 def is_path_blocked(point1, point2, obstacles):
     """Check if the straight line between two points intersects or lies within any obstacle."""
@@ -97,8 +97,8 @@ def visualize_map(map_boundary, obstacles, graph, end_point):
 def get_obstacles(map_boundary, num_obstacles):
     obstacles = []
     for _ in range(num_obstacles):
-        x1 = np.random.uniform(0.15*map_boundary[0][0], 0.75*map_boundary[1][0])
-        y1 = np.random.uniform(0.15*map_boundary[0][1], 0.75*map_boundary[2][1])
+        x1 = np.random.uniform(0.15*map_boundary[1][0], 0.75*map_boundary[1][0])
+        y1 = np.random.uniform(0.15*map_boundary[2][1], 0.75*map_boundary[2][1])
         width = np.random.uniform(0.1*map_boundary[1][0], 0.25*map_boundary[1][0])
         height = np.random.uniform(0.1*map_boundary[2][1], 0.25*map_boundary[2][1])
         x2 = x1 + width
@@ -112,24 +112,8 @@ def get_obstacles(map_boundary, num_obstacles):
 
     return obstacles
 
-
-
-class TrajectoryDesign():
-    """Class to design a trajectory using receding horizon control."""
-    def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
-        self.map_boundary = map_boundary
-        #self.obstacles = obstacles
-        self.obstacles = self.merge_intersecting_obstacles(obstacles)
-        self.end_point = end_point
-        self.start_point = start_point
-        self.tau = tau
-        self.graph, self.points = self.build_graph()
-        self.distances = self.dijkstra()
-
-    def merge_intersecting_obstacles(self, obstacles):
+def merge_intersecting_obstacles(obstacles):
         """Merge intersecting obstacles into a single larger obstacle."""
-        from shapely.geometry import Polygon, MultiPolygon
-
         # Convert obstacles to shapely Polygons
         polygons = [Polygon(obstacle) for obstacle in obstacles]
 
@@ -147,7 +131,19 @@ class TrajectoryDesign():
         # If no merging occurs (fallback)
         return obstacles
 
+class TrajectoryDesign():
+    """Class to design a trajectory using receding horizon control."""
+    def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
+        self.map_boundary = map_boundary
+        #self.obstacles = obstacles
+        self.obstacles = merge_intersecting_obstacles(obstacles)
+        self.end_point = end_point
+        self.start_point = start_point
+        self.tau = tau
+        self.graph, self.points = self.build_graph()
+        self.distances = self.dijkstra()
 
+    
     def build_graph(self):
         """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
         points = []
@@ -159,7 +155,7 @@ class TrajectoryDesign():
         for i, point1 in enumerate(points):
             graph[tuple(point1)] = {}
             for j, point2 in enumerate(points):
-                if i != j and not is_path_blocked(point1, point2, self.obstacles) and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles): #and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
 
@@ -248,7 +244,7 @@ class TrajectoryDesign():
 
     def plot(self,plt_traj=False):
         """Plot the map, obstacles, and network."""
-        # visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
+        #visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
         #add the trajectory to the plot
         fig, ax = plt.subplots()
         boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
@@ -256,11 +252,14 @@ class TrajectoryDesign():
         for i, obstacle in enumerate(self.obstacles):
             obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
             ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
-        for node, neighbors in self.graph.items():
-            for neighbor in neighbors:
-                ax.plot(
-                    [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
-                )
+
+        """Uncomment this if you'd like to see the network"""
+        #for node, neighbors in self.graph.items():
+        #    for neighbor in neighbors:
+        #        ax.plot(
+        #            [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
+        #        )
+        
         ax.scatter(*self.end_point, color='red', label='Endpoint')
         ax.scatter(*self.start_point, color='green', label='Startpoint')
         if plt_traj:
@@ -275,24 +274,15 @@ class TrajectoryDesign():
     
 def main():
     # Define map boundary and obstacles
-    map_boundary = [[0, 0], [20, 0], [20, 10], [0, 10]]
-    #obstacles = [
-        #[[2, 2], [4, 2], [4, 4], [2, 4]],  # Obstacle 1
-        #[[6, 6], [8, 6], [8, 8], [6, 8]],  # Obstacle 2
-        #[[2, 4], [4, 4], [4, 6], [2, 6]],  # Obstacle 3
-        #[[1, 2], [2, 2], [2, 3], [1, 3]]  # Obstacle 4
-        #[[1, 1], [3, 1], [3, 6], [2, 6], [2, 2], [1, 2]],  # Obstacle 1
-        #[[1, 1], [3, 1], [3, 6], [1, 6], [1, 5], [2, 5], [2, 2], [1, 2]],  # Obstacle 2
-        #[[1, 1], [2, 1], [2, 2], [1, 2]],  # Obstacle 1
-        #[[2 ,1], [3, 1], [3, 6], [2, 6]],  # Obstacle 2
-        #[[1, 5], [2, 5], [2, 6], [1, 6]],  # Obstacle 3
-    #]
-    obstacles = get_obstacles(map_boundary, 8)
-    end_point = [19.9, 5]
+    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    obstacles = get_obstacles(map_boundary, 5)
+    #If you'd like a custom obstacle, you can add it here
+    #obstacles.append([[5, 5], [6, 5], [6, 6], [5, 6]])
+    end_point = [9, 9]
 
     visualize_map(map_boundary, obstacles, {}, end_point)
 
-    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0.1, 5], 0.1)
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 0], 0.1)
 
     td.receding_horizon()
     td.plot(plt_traj=True)
