@@ -108,9 +108,23 @@ def get_obstacles(map_boundary, num_obstacles):
         x4 = x1
         y4 = y3
         obstacles.append([[x1, y1], [x2, y2], [x3, y3], [x4, y4]])
-
-
     return obstacles
+
+def random_shift_point(point, shift_range=0.1):
+    """Shift a point by a random amount within a range."""
+    x_shift = np.random.uniform(-shift_range, shift_range)
+    y_shift = np.random.uniform(-shift_range, shift_range)
+    return [point[0] + x_shift, point[1] + y_shift]
+
+def random_shift_all(obstacles, shift_range=0.1):
+    """Shift the vertices of obstacles by a random amount within a range."""
+    shifted_obstacles = []
+    for obstacle in obstacles:
+        shifted_obstacle = []
+        for vertex in obstacle:
+            shifted_obstacle.append(random_shift_point(vertex, shift_range))
+        shifted_obstacles.append(shifted_obstacle)
+    return shifted_obstacles
 
 def merge_intersecting_obstacles(obstacles):
         """Merge intersecting obstacles into a single larger obstacle."""
@@ -186,13 +200,13 @@ class TrajectoryDesign():
 
     def receding_horizon(self):
         current_position = self.start_point
-        self.trajectory = []
+        self.trajectory = np.empty((0,2), float)
         while not np.allclose(current_position, self.end_point, atol=1e-1):
             # Plan a trajectory from the current position to the endpoint
             next_position = self.plan_trajectory(current_position)
             print(f"Moving from {current_position} to {next_position}")
             #store the trajectory
-            self.trajectory.append(next_position)
+            self.trajectory = np.append(self.trajectory, [next_position], axis=0)
 
             # Move to the next position
             current_position = next_position
@@ -237,12 +251,19 @@ class TrajectoryDesign():
         # Validate the proposed point
         if point_inside_obstacle(proposed_point, self.obstacles):
             raise ValueError(f"Proposed trajectory point {proposed_point} is inside an obstacle.")
-
+        
         return proposed_point
+    
+    
+    def calc_trajectory_length(self):
+        """Calculate the length of the trajectory."""
+        length = 0
+        for i in range(len(self.trajectory)-1):
+            length += np.linalg.norm(np.array(self.trajectory[i]) - np.array(self.trajectory[i+1]))
+        return length
 
 
-
-    def plot(self,plt_traj=False):
+    def plot(self,plt_traj=False, show_network=False, extra_trajectory_list=None):
         """Plot the map, obstacles, and network."""
         #visualize_map(self.map_boundary, self.obstacles, self.graph, self.end_point)
         #add the trajectory to the plot
@@ -254,25 +275,90 @@ class TrajectoryDesign():
             ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
 
         """Uncomment this if you'd like to see the network"""
-        #for node, neighbors in self.graph.items():
-        #    for neighbor in neighbors:
-        #        ax.plot(
-        #            [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
-        #        )
+        if show_network:
+            for node, neighbors in self.graph.items():
+                for neighbor in neighbors:
+                    ax.plot(
+                        [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
+                    )
         
         ax.scatter(*self.end_point, color='red', label='Endpoint')
         ax.scatter(*self.start_point, color='green', label='Startpoint')
         if plt_traj:
-            for i in range(len(self.trajectory)-1):
-                ax.plot([self.trajectory[i][0], self.trajectory[i+1][0]], [self.trajectory[i][1], self.trajectory[i+1][1]], color='green')
+            ax.plot(self.trajectory[:,0], self.trajectory[:,1], color="black", label="Trajectory")
+        
+        if extra_trajectory_list:
+            colors = ['orange', 'purple', 'brown', 'pink', 'gray', 'cyan', 'magenta', 'yellow', 'green']
+            for j, extra_trajectory in enumerate(extra_trajectory_list):
+                ax.plot(extra_trajectory[:,0], extra_trajectory[:,1], linestyle = ":", color=colors[j%len(colors)], label=f"Trajectory {j+1}")
+        
         ax.set_aspect('equal')
+        plt.annotate(f"Trajectory Length: {self.calc_trajectory_length():.2f}", self.start_point)
         plt.legend()
         plt.title("Map with Obstacles and Network")
         plt.show()
+        return ax
 
 
+def run_tau(number_of_obstacles, tau_list):
+    # Define map boundary and obstacles
+    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    obstacles = get_obstacles(map_boundary, number_of_obstacles)
+    end_point = [9, 9]
+    trajectory_list = []
+
+    visualize_map(map_boundary, obstacles, {}, end_point)
+
+    for i, tau in enumerate(tau_list):
+        td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 0], tau)
+
+        td.receding_horizon()
+
+        if i == 0:
+            td.plot(plt_traj=True)
+            org_td = td
+        else:
+            trajectory_list.append(td.trajectory)
     
-def main():
+        print(f"Trajectory Length: {td.calc_trajectory_length():.2f}")
+    org_td.plot(plt_traj=True, extra_trajectory_list=trajectory_list)
+
+
+
+def run_with_shifts(number_of_obstacles, tau, shift_range, num_shifts):
+    # Define map boundary and obstacles
+    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    org_obstacles = get_obstacles(map_boundary, number_of_obstacles)
+    org_end_point = [9, 9]
+    org_start_point = [0, 0]
+    visualize_map(map_boundary, org_obstacles, {}, org_end_point)
+    trajectory_list = []
+
+    for i in range(num_shifts):
+        if i == 0:
+            obstacles = org_obstacles
+            end_point = org_end_point
+            start_point = org_start_point
+        else:
+            obstacles = random_shift_all(org_obstacles, shift_range)
+            end_point = random_shift_point(org_end_point, shift_range)
+            start_point = random_shift_point(org_start_point, shift_range)
+
+
+        td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
+
+        td.receding_horizon()
+
+        if i == 0:
+            td.plot(plt_traj=True)
+            org_td = td
+        else:
+            trajectory_list.append(td.trajectory)
+    
+        print(f"Trajectory Length: {td.calc_trajectory_length():.2f}")
+    org_td.plot(plt_traj=True, extra_trajectory_list=trajectory_list)
+
+def run():
     # Define map boundary and obstacles
     map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
     obstacles = get_obstacles(map_boundary, 5)
@@ -292,6 +378,14 @@ def main():
     for obstacle in td.obstacles:
         for corner in obstacle:
             print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
+
+    print(f"Trajectory Length: {td.calc_trajectory_length():.2f}")
+    
+
+def main():
+    #run()
+    # run_with_shifts(5, 0.1, 0.2, 5)
+    run_tau(5, [0.05, 0.075, 0.1, 0.125, 0.15, 0.2])
    
     
 
