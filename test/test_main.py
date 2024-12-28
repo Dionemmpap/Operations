@@ -3,7 +3,7 @@ import sys
 import pytest
 
 sys.path.append('.')
-from main import TrajectoryDesign, is_path_blocked, lines_intersect
+from main import TrajectoryDesign, is_path_blocked, lines_intersect, path_is_not_diagonal_of_obstacle, equal_points
 
 
 #helper function to calculate distance between two points
@@ -27,7 +27,7 @@ def test_build_graph():
     assert len(graph) == 9
     for point1 in points:
         for point2 in points:
-            if point1 != point2 and not is_path_blocked(point1, point2, obstacles):
+            if point1 != point2 and not is_path_blocked(point1, point2, obstacles) and path_is_not_diagonal_of_obstacle(point1, point2, obstacles):
                 assert graph[tuple(point1)][tuple(point2)] == distance(point1, point2)
 
 
@@ -46,7 +46,32 @@ def test_dijkstra():
     assert distances[(6,8)] == 10**0.5
 
 
+def test_equal_points():
+    # Points are equal
+    assert equal_points([0, 0], [0, 0]) is True
 
+def test_close_equal_points():
+    # Points are close and count as equal
+    assert equal_points([0, 0.0001], [0.0001, 0]) is True
+
+def test_unequal_points():
+    # Points are not equal
+    assert equal_points([0, 0], [1, 1]) is False
+
+def test_close_points():
+    # Points are close but not equal
+    assert equal_points([0, 0], [0.01, 0]) is False
+
+
+def test_path_is_diagonal_of_obstacle():
+    # Path is diagonal of obstacle
+    obstacles = [[[1, 1], [3, 1], [3, 3], [1, 3]]]  # Square obstacle
+    assert path_is_not_diagonal_of_obstacle([1, 3], [3, 1], obstacles) is False
+
+def test_path_is_not_diagonal_of_obstacle():
+    # Path is not diagonal of obstacle
+    obstacles = [[[1, 1], [3, 1], [3, 3], [1, 3]]]  # Square obstacle
+    assert path_is_not_diagonal_of_obstacle([1, 1], [1, 3], obstacles) is True
 
 
 def test_intersecting_lines():

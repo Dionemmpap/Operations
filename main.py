@@ -9,10 +9,10 @@ from gurobipy import GRB
 #Helper Functions
 def equal_points(p1, p2):
     """Check if two points are equal."""
-    return np.allclose(p1, p2, atol=1e-1)
+    return np.allclose(p1, p2, atol=1e-3)
 
 
-def path_is_diagonal_of_obstacle(p1, p2, obstacles):
+def path_is_not_diagonal_of_obstacle(p1, p2, obstacles):
     """Check if a straight line between two points is not the diagnal a the obstacle."""
     def check_diagonal(p1, p2, obstacle, n):
         return equal_points(p1, obstacle[n%4]) and equal_points(p2, obstacle[(n+2)%4])
@@ -97,7 +97,7 @@ class TrajectoryDesign():
         for i, point1 in enumerate(points):
             graph[tuple(point1)] = {}
             for j, point2 in enumerate(points):
-                if i != j and not is_path_blocked(point1, point2, self.obstacles) and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles) and path_is_not_diagonal_of_obstacle(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
 
