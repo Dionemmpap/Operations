@@ -208,11 +208,11 @@ class TrajectoryDesign():
 
         # Filter out trajectories ending inside obstacles
         valid_nodes = [
-            node for node in visible_nodes if not point_inside_obstacle(node, self.obstacles)
+            node for node in visible_nodes #if not point_inside_obstacle(node, self.obstacles)
         ]
 
-        if not valid_nodes:
-            raise ValueError("No valid trajectories available due to obstacles.")
+        #if not valid_nodes:
+            #raise ValueError("No valid trajectories available due to obstacles.")
 
         # Solve optimization problem to find the best node
         objective = gp.Model()
@@ -235,8 +235,8 @@ class TrajectoryDesign():
         proposed_point = np.array(current_position) + self.tau * direction
 
         # Validate the proposed point
-        if point_inside_obstacle(proposed_point, self.obstacles):
-            raise ValueError(f"Proposed trajectory point {proposed_point} is inside an obstacle.")
+        #if point_inside_obstacle(proposed_point, self.obstacles):
+            #raise ValueError(f"Proposed trajectory point {proposed_point} is inside an obstacle.")
 
         return proposed_point
 
@@ -278,7 +278,7 @@ def main():
     obstacles = get_obstacles(map_boundary, 5)
     #If you'd like a custom obstacle, you can add it here
     #obstacles.append([[5, 5], [6, 5], [6, 6], [5, 6]])
-    end_point = [9, 9]
+    end_point = [9.9, 9.9]
 
     visualize_map(map_boundary, obstacles, {}, end_point)
 

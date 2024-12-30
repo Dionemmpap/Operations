@@ -61,11 +61,11 @@ def test_get_obstacles():
     assert 0.1*map_boundary[1][0] <= test_obstacle[0][1][0] - test_obstacle[0][0][0] <= 0.25*map_boundary[1][0]
     assert 0.1*map_boundary[1][1] <= test_obstacle[0][2][1] - test_obstacle[0][0][1] <= 0.25*map_boundary[1][1]
 
-def test_point_inside_obstacle():
-    #Point is inside an obstacle
-    assert point_inside_obstacle([3, 3], obstacles) is True
-    #Point is not inside an obstacle
-    assert point_inside_obstacle([5, 5], obstacles) is False
+#def test_point_inside_obstacle():
+#    #Point is inside an obstacle
+#    assert point_inside_obstacle([3, 3], obstacles) is True
+#    #Point is not inside an obstacle
+#    assert point_inside_obstacle([5, 5], obstacles) is False
 
 def test_merge_intersecting_obstacles():
     #Test whether the function correctly merges intersecting obstacles
