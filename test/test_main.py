@@ -1,9 +1,11 @@
 """ Tests for the main module. """
 import sys
 import pytest
+import numpy as np
+from shapely.geometry import Polygon
 
 sys.path.append('.')
-from main import TrajectoryDesign, is_path_blocked, get_obstacles, point_inside_obstacle, merge_intersecting_obstacles
+from main import TrajectoryDesign, is_path_blocked, get_obstacles, merge_intersecting_obstacles
 
 
 #helper function to calculate distance between two points
@@ -48,31 +50,42 @@ def test_dijkstra():
 
 
 def test_get_obstacles():
-    #Dimensions of obstacles generated fall within the expected range:
-        # 1) Bottom left corner of obstacle is within 15% and 75% of the map boundary width & height
-        # 2) The width and the height of the obstacle are between 10% and 25% of the width and height of the map boundary
+    np.random.seed(42)  # Seed to ensure deterministic results
+    map_boundary = [(0, 0), (10, 0), (0, 10)]  # Example map boundary
     test_obstacle = get_obstacles(map_boundary, 1)
-    #Assert that the bottom left corner of the obstacle has x - coordinate within 15% and 75% of the map boundary width
-    #Assert that the bottom left corner of the obstacle has y - coordinate within 15% and 75% of the map boundary height
-    #Assert that the width of the obstacle is between 10% and 25% of the width of the map boundary
-    #Assert that the height of the obstacle is between 10% and 25% of the height of the map boundary
-    assert 0.15*map_boundary[1][0] <= test_obstacle[0][0][0] <= 0.75*map_boundary[1][0]
-    assert 0.15*map_boundary[1][1] <= test_obstacle[0][0][1] <= 0.75*map_boundary[1][1]
-    assert 0.1*map_boundary[1][0] <= test_obstacle[0][1][0] - test_obstacle[0][0][0] <= 0.25*map_boundary[1][0]
-    assert 0.1*map_boundary[1][1] <= test_obstacle[0][2][1] - test_obstacle[0][0][1] <= 0.25*map_boundary[1][1]
+    
+    # Bottom-left corner coordinates
+    x1, y1 = test_obstacle[0][0]
 
-#def test_point_inside_obstacle():
-#    #Point is inside an obstacle
-#    assert point_inside_obstacle([3, 3], obstacles) is True
-#    #Point is not inside an obstacle
-#    assert point_inside_obstacle([5, 5], obstacles) is False
+    # Width and height
+    width = test_obstacle[0][1][0] - x1
+    height = test_obstacle[0][2][1] - y1
+
+    # Assert bottom-left corner is within 15% and 75% of map boundary dimensions
+    assert 0.15 * map_boundary[1][0] <= x1 <= 0.75 * map_boundary[1][0]
+    assert 0.15 * map_boundary[2][1] <= y1 <= 0.75 * map_boundary[2][1]
+
+    # Assert width and height are within 10% and 25% of map boundary dimensions
+    assert 0.1 * map_boundary[1][0] <= width <= 0.25 * map_boundary[1][0]
+    assert 0.1 * map_boundary[2][1] <= height <= 0.25 * map_boundary[2][1]
+
+
 
 def test_merge_intersecting_obstacles():
-    #Test whether the function correctly merges intersecting obstacles
-    obstacles = [[[1, 1], [3, 1], [3, 3], [1, 3]], [[2, 2], [4, 2], [4, 4], [2, 4]]]
-    #Function should return all corners of the merged obstacle (here I'm using sets so that the order doesn't matter)
-    assert set(merge_intersecting_obstacles(obstacles)) == {[[1, 1], [3, 1], [3, 2], [1, 3], [2, 3], [4, 2], [4, 4], [2, 4]]}
+    obstacles = [
+        [[1, 1], [3, 1], [3, 3], [1, 3]],  # Square 1
+        [[2, 2], [4, 2], [4, 4], [2, 4]]   # Square 2 (intersects with Square 1)
+    ]
     
+    merged_obstacles = merge_intersecting_obstacles(obstacles)
+    
+    # Assert only one merged obstacle is returned
+    assert len(merged_obstacles) == 1
+
+    # Assert merged obstacle contains the expected bounding box
+    merged_polygon = Polygon(merged_obstacles[0])
+    expected_polygon = Polygon([[1, 1], [3, 1], [3, 2], [4, 2], [4, 4], [2, 4], [2, 3], [1, 3]])
+    assert merged_polygon.equals(expected_polygon)
 
 
 def test_path_blocked_by_single_obstacle():
@@ -103,4 +116,42 @@ def test_path_tangent_to_obstacle():
     obstacles = [[[1, 1], [3, 1], [3, 3], [1, 3]]]  # Square obstacle
     assert is_path_blocked([0, 0], [4, 1], obstacles) is False
 
+
+def test_plan_trajectory():
+    """Test the trajectory planning logic."""
+    # Set up the test data
+    current_position = [0, 0]
+    end_point = [10, 10]
+    obstacles = [[[2, 2], [4, 2], [4, 4], [2, 4]]]
+    tau = 0.1
+
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
+    point = td.plan_trajectory(current_position)
+
+    # Assertions
+    assert isinstance(point, np.ndarray)
+    assert len(point) == 2
+
+    # Ensure the proposed point moves closer to the end point
+    initial_distance = np.linalg.norm(np.array(current_position) - np.array(end_point))
+    new_distance = np.linalg.norm(np.array(point) - np.array(end_point))
+    assert new_distance < initial_distance
     
+def test_receding_horizon():
+    """Test the receding horizon trajectory planning logic."""
+    # Set up the test data
+    end_point = [10, 10]
+    obstacles = [[[2, 2], [4, 2], [4, 4], [2, 4]]]
+    tau = 0.1
+
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
+    td.receding_horizon()
+
+    # Assertions
+    assert isinstance(td.trajectory, list)
+    assert all(isinstance(point, np.ndarray) for point in td.trajectory)
+    assert len(td.trajectory) > 0
+    assert all(len(point) == 2 for point in td.trajectory)
+    assert all(isinstance(point[0], (int, float)) and isinstance(point[1], (int, float)) for point in td.trajectory)
+    assert all(0 <= point[0] <= 10 and 0 <= point[1] <= 10 for point in td.trajectory)
+    assert np.all(np.diff(td.trajectory, axis=0) > 0)  # Ensure the trajectory is monotonically increasing

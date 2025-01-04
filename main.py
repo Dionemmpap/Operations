@@ -8,52 +8,6 @@ from shapely.geometry import Point, Polygon, MultiPolygon, LineString
 
 
 #Helper Functions
-#def equal_points(p1, p2):
-#    """Check if two points are equal."""
-#    return np.allclose(p1, p2, atol=1e-1)
-
-def point_inside_obstacle(point, obstacles):
-    """
-    Check if a point is inside any obstacle.
-    
-    Args:
-        point (list or tuple): The [x, y] coordinates of the point.
-        obstacles (list of lists): List of obstacles, where each obstacle is a list of [x, y] vertices.
-    
-    Returns:
-        bool: True if the point is inside any obstacle, False otherwise.
-    """
-    point_geom = Point(point)
-    for obstacle in obstacles:
-        obstacle_polygon = Polygon(obstacle)
-        if obstacle_polygon.contains(point_geom):
-            return True
-    return False
-
-
-#def path_is_diagonal_of_obstacle(p1, p2, obstacles):
-#    """Check if a straight line between two points is not the diagnal a the obstacle."""
-#    def check_diagonal(p1, p2, obstacle, n):
-#        return equal_points(p1, obstacle[n%4]) and equal_points(p2, obstacle[(n+2)%4])
-#    
-#    for obstacle in obstacles:
-#        for i in range(4):
-#            if check_diagonal(p1, p2, obstacle, i):
-#                return False
-#    return True
-
-#def lines_intersect(p1, p2, q1, q2):
-#    """Check if line segments p1-p2 and q1-q2 intersect."""
-#    def ccw(a, b, c):
-#        """Check if points a, b, c are listed in a counterclockwise order."""
-#        return (c[1] - a[1]) * (b[0] - a[0]) > (b[1] - a[1]) * (c[0] - a[0])
-#
-#    if equal_points(p1, q1) or equal_points(p1, q2) or equal_points(p2, q1) or equal_points(p2, q2):
-#        return False
-#    
-#    # Two line segments intersect if and only if they straddle each other
-#    return ccw(p1, q1, q2) != ccw(p2, q1, q2) and ccw(p1, p2, q1) != ccw(p1, p2, q2)
-
 def is_path_blocked(point1, point2, obstacles):
     """Check if the straight line between two points intersects or lies within any obstacle."""
     line = LineString([point1, point2])
@@ -196,6 +150,8 @@ class TrajectoryDesign():
 
             # Move to the next position
             current_position = next_position
+
+            #Uncomment to see trajectory progress per iteration
             #self.plot(plt_traj=True)
 
     def plan_trajectory(self, current_position):
@@ -206,39 +162,27 @@ class TrajectoryDesign():
             if not is_path_blocked(current_position, node, self.obstacles):
                 visible_nodes.append(node)
 
-        # Filter out trajectories ending inside obstacles
-        valid_nodes = [
-            node for node in visible_nodes #if not point_inside_obstacle(node, self.obstacles)
-        ]
-
-        #if not valid_nodes:
-            #raise ValueError("No valid trajectories available due to obstacles.")
-
         # Solve optimization problem to find the best node
         objective = gp.Model()
         objective.setParam('OutputFlag', 0)
-        x = objective.addVars(len(valid_nodes), vtype=GRB.BINARY, name='x')
+        x = objective.addVars(len(visible_nodes), vtype=GRB.BINARY, name='x')
         objective.setObjective(
             sum(
                 x[j] * (
-                    np.linalg.norm(np.array(current_position) - np.array(valid_nodes[j]))
-                    + self.distances[tuple(valid_nodes[j])]
-                ) for j in range(len(valid_nodes))
+                    np.linalg.norm(np.array(current_position) - np.array(visible_nodes[j]))
+                    + self.distances[tuple(visible_nodes[j])]
+                ) for j in range(len(visible_nodes))
             ), GRB.MINIMIZE
         )
-        objective.addConstr(sum(x[j] for j in range(len(valid_nodes))) == 1)
+        objective.addConstr(sum(x[j] for j in range(len(visible_nodes))) == 1)
         objective.optimize()
 
         # Calculate the proposed next position
-        direction = np.array(valid_nodes[np.argmax([x[j].x for j in range(len(valid_nodes))])]) - np.array(current_position)
+        direction = np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position)
         direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
-        proposed_point = np.array(current_position) + self.tau * direction
+        point = np.array(current_position) + self.tau * direction
 
-        # Validate the proposed point
-        #if point_inside_obstacle(proposed_point, self.obstacles):
-            #raise ValueError(f"Proposed trajectory point {proposed_point} is inside an obstacle.")
-
-        return proposed_point
+        return point
 
 
 
@@ -275,7 +219,7 @@ class TrajectoryDesign():
 def main():
     # Define map boundary and obstacles
     map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
-    obstacles = get_obstacles(map_boundary, 5)
+    obstacles = get_obstacles(map_boundary, 4)
     #If you'd like a custom obstacle, you can add it here
     #obstacles.append([[5, 5], [6, 5], [6, 6], [5, 6]])
     end_point = [9.9, 9.9]
