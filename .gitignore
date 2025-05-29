@@ -50,3 +50,13 @@ coverage.xml
 # Sphinx documentation
 docs/_build/
 .pytest_cache/v/cache/lastfailed
+
+# Ignore pytest cache files
+.pytest_cache/
+
+# Ignore Python bytecode files
+__pycache__/
+
+# Ignore test result output (if using pytest's `--junitxml` option)
+*.xml
+
