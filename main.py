@@ -17,6 +17,26 @@ def is_path_blocked(point1, point2, obstacles):
             return True
     return False
 
+def is_point_on_boundary(point, map_boundary):
+    """Check if a point lies on the map boundary."""
+    # Check if point matches any boundary point
+    if point in map_boundary:
+        return True
+    
+    # Check if point lies on any boundary edge
+    for i in range(len(map_boundary)):
+        p1 = map_boundary[i]
+        p2 = map_boundary[(i + 1) % len(map_boundary)]
+        
+        # Create line segment
+        line = LineString([p1, p2])
+        
+        # Check if point lies on the line segment
+        if line.distance(Point(point)) < 1e-6:
+            return True
+            
+    return False
+
 
 def visualize_map(map_boundary, obstacles, graph, end_point):
     """Visualize the map, obstacles, and network."""
@@ -85,6 +105,8 @@ def merge_intersecting_obstacles(obstacles):
         # If no merging occurs (fallback)
         return obstacles
 
+
+
 class TrajectoryDesign():
     """Class to design a trajectory using receding horizon control."""
     def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
@@ -102,14 +124,23 @@ class TrajectoryDesign():
         """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
         points = []
         for obstacle in self.obstacles:
-            points.extend(obstacle)
-        points.append(self.end_point)
+            for point in obstacle:
+                # Only add points that are not on the boundary
+                if not is_point_on_boundary(point, self.map_boundary):
+                    points.append(point)
+        
+        # Always include the end point
+        if not is_point_on_boundary(self.end_point, self.map_boundary):
+            points.append(self.end_point)
+        else:
+            # If end point is on boundary, we still need it
+            points.append(self.end_point)
 
         graph = {}
         for i, point1 in enumerate(points):
             graph[tuple(point1)] = {}
             for j, point2 in enumerate(points):
-                if i != j and not is_path_blocked(point1, point2, self.obstacles): #and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
 
@@ -210,7 +241,7 @@ class TrajectoryDesign():
             for i in range(len(self.trajectory)-1):
                 ax.plot([self.trajectory[i][0], self.trajectory[i+1][0]], [self.trajectory[i][1], self.trajectory[i+1][1]], color='green')
         ax.set_aspect('equal')
-        plt.legend()
+        #plt.legend()
         plt.title("Map with Obstacles and Network")
         plt.show()
 
@@ -218,15 +249,64 @@ class TrajectoryDesign():
     
 def main():
     # Define map boundary and obstacles
-    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
-    obstacles = get_obstacles(map_boundary, 4)
+    #map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    #obstacles = get_obstacles(map_boundary, 4)
     #If you'd like a custom obstacle, you can add it here
     #obstacles.append([[5, 5], [6, 5], [6, 6], [5, 6]])
-    end_point = [9.9, 9.9]
+    #end_point = [9.9, 9.9]
+
+    #visualize_map(map_boundary, obstacles, {}, end_point)
+
+    #td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 0], 0.1)
+#
+    #td.receding_horizon()
+    #td.plot(plt_traj=True)
+    #
+    ## # Print distances for each obstacle corner to the endpoint
+    #print("Distances from obstacle corners to endpoint:")
+    #for obstacle in td.obstacles:
+    #    for corner in obstacle:
+    #        print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
+   
+    #Validation of paper results
+    map_boundary = [[0, 0], [0, 10], [45, 10], [45, 0]]
+    obstacles = []
+    # Obstacles
+    obstacles.append([[1, 1], [2, 1], [2, 4.5], [1, 4.5]])
+
+    obstacles.append([[1, 6], [5, 6], [5, 7], [1, 7]])
+    obstacles.append([[4, 4], [5, 4], [5, 7], [4, 7]])
+    obstacles.append([[5, 6.5], [7, 6.5], [7, 10], [5, 10]])
+
+    obstacles.append([[6, 3], [7, 3], [7, 5], [6, 5]])
+    obstacles.append([[6, 0.2], [7, 0.2], [7, 2], [6, 2]])
+    obstacles.append([[6, 0.2], [10, 0.2], [10, 1], [6, 1]])
+    obstacles.append([[6, 4], [10, 4], [10, 5], [6, 5]])
+    obstacles.append([[9, 0.2], [10, 0.2], [10, 5], [9, 5]])
+
+    obstacles.append([[11.8, 7], [14, 7], [14, 9], [11.8, 9]])
+    obstacles.append([[11, 4], [13.5, 4], [13.5, 6], [11, 6]])
+    obstacles.append([[11, 1], [13.5, 1], [13.5, 3], [11, 3]])
+
+    obstacles.append([[15, 0], [18, 0], [18, 9], [15, 9]])
+    
+    obstacles.append([[22, 2], [25, 2], [25, 3], [22, 3]])
+
+    obstacles.append([[24, 7], [27, 7], [27, 10], [24, 10]])
+
+    obstacles.append([[29.5, 7], [31, 7], [31, 8.5], [29.5, 8.5]])
+
+    obstacles.append([[28, 1], [33, 1], [33, 4], [28, 4]])
+
+    obstacles.append([[35, 5], [38, 5], [38, 8], [35, 8]])
+    obstacles.append([[37, 3], [40, 3], [40, 6], [37, 6]])
+    obstacles.append([[39, 1], [42, 1], [42, 4], [39, 4]])
+
+    end_point = [44.9, 5]
 
     visualize_map(map_boundary, obstacles, {}, end_point)
 
-    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 0], 0.1)
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 5], 0.1)
 
     td.receding_horizon()
     td.plot(plt_traj=True)
@@ -236,8 +316,6 @@ def main():
     for obstacle in td.obstacles:
         for corner in obstacle:
             print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
-   
-    
 
 if __name__ == "__main__":
     main()
