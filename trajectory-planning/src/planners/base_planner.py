@@ -1,95 +1,16 @@
-""" Receding Horizon Control for Trajectory Design """
 import numpy as np
-import heapq
-import matplotlib.pyplot as plt
 import gurobipy as gp
 from gurobipy import GRB
-from shapely.geometry import Point, Polygon, MultiPolygon, LineString
+import matplotlib.pyplot as plt
+import heapq
+from utils.obstacles import merge_intersecting_obstacles,get_obstacles
+from utils.geometry import is_path_blocked,is_point_on_boundary
 
 
-#Helper Functions
-def is_path_blocked(point1, point2, obstacles):
-    """Check if the straight line between two points intersects or lies within any obstacle."""
-    line = LineString([point1, point2])
-    for obstacle in obstacles:
-        polygon = Polygon(obstacle)
-        if line.crosses(polygon) or line.within(polygon):
-            return True
-    return False
-
-
-def visualize_map(map_boundary, obstacles, graph, end_point):
-    """Visualize the map, obstacles, and network."""
-    fig, ax = plt.subplots()
-
-    # Plot map boundary
-    boundary_x, boundary_y = zip(*map_boundary + [map_boundary[0]])
-    ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
-
-    # Plot obstacles
-    for i, obstacle in enumerate(obstacles):
-        obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
-        ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
-
-    # Plot graph edges
-    for node, neighbors in graph.items():
-        for neighbor in neighbors:
-            ax.plot(
-                [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
-            )
-
-    # Plot end point
-    ax.scatter(*end_point, color='red', label='Endpoint')
-
-    ax.set_aspect('equal')
-    plt.legend()
-    plt.title("Map with Obstacles and Network")
-    plt.show()
-
-
-
-def get_obstacles(map_boundary, num_obstacles):
-    obstacles = []
-    for _ in range(num_obstacles):
-        x1 = np.random.uniform(0.15*map_boundary[1][0], 0.75*map_boundary[1][0])
-        y1 = np.random.uniform(0.15*map_boundary[2][1], 0.75*map_boundary[2][1])
-        width = np.random.uniform(0.1*map_boundary[1][0], 0.25*map_boundary[1][0])
-        height = np.random.uniform(0.1*map_boundary[2][1], 0.25*map_boundary[2][1])
-        x2 = x1 + width
-        y2 = y1
-        x3 = x2
-        y3 = y1 + height
-        x4 = x1
-        y4 = y3
-        obstacles.append([[x1, y1], [x2, y2], [x3, y3], [x4, y4]])
-
-
-    return obstacles
-
-def merge_intersecting_obstacles(obstacles):
-        """Merge intersecting obstacles into a single larger obstacle."""
-        # Convert obstacles to shapely Polygons
-        polygons = [Polygon(obstacle) for obstacle in obstacles]
-
-        # Merge all polygons using buffer(0)
-        merged = MultiPolygon(polygons).buffer(0)
-
-        # Check if merged result is a single Polygon
-        if isinstance(merged, Polygon):
-            return [list(merged.exterior.coords[:-1])]
-
-        # Check if merged result is a MultiPolygon
-        elif isinstance(merged, MultiPolygon):
-            return [list(poly.exterior.coords[:-1]) for poly in merged.geoms]
-
-        # If no merging occurs (fallback)
-        return obstacles
-
-class TrajectoryDesign():
+class TrajectoryDesignBase():
     """Class to design a trajectory using receding horizon control."""
     def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
         self.map_boundary = map_boundary
-        #self.obstacles = obstacles
         self.obstacles = merge_intersecting_obstacles(obstacles)
         self.end_point = end_point
         self.start_point = start_point
@@ -102,14 +23,23 @@ class TrajectoryDesign():
         """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
         points = []
         for obstacle in self.obstacles:
-            points.extend(obstacle)
-        points.append(self.end_point)
+            for point in obstacle:
+                # Only add points that are not on the boundary
+                if not is_point_on_boundary(point, self.map_boundary):
+                    points.append(point)
+        
+        # Always include the end point
+        if not is_point_on_boundary(self.end_point, self.map_boundary):
+            points.append(self.end_point)
+        else:
+            # If end point is on boundary, we still need it
+            points.append(self.end_point)
 
         graph = {}
         for i, point1 in enumerate(points):
             graph[tuple(point1)] = {}
             for j, point2 in enumerate(points):
-                if i != j and not is_path_blocked(point1, point2, self.obstacles): #and path_is_diagonal_of_obstacle(point1, point2, self.obstacles):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
 
@@ -135,7 +65,6 @@ class TrajectoryDesign():
                 if n2 not in shortest:
                     heapq.heappush(minHeap, [w1 + w2, n2])
 
-    
         return shortest
 
     def receding_horizon(self):
@@ -152,7 +81,7 @@ class TrajectoryDesign():
             current_position = next_position
 
             #Uncomment to see trajectory progress per iteration
-            #self.plot(plt_traj=True)
+            # self.plot(plt_traj=True)
 
     def plan_trajectory(self, current_position):
         """Plan a trajectory from the current position to the endpoint."""
@@ -213,31 +142,3 @@ class TrajectoryDesign():
         plt.legend()
         plt.title("Map with Obstacles and Network")
         plt.show()
-
-
-    
-def main():
-    # Define map boundary and obstacles
-    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
-    obstacles = get_obstacles(map_boundary, 4)
-    #If you'd like a custom obstacle, you can add it here
-    #obstacles.append([[5, 5], [6, 5], [6, 6], [5, 6]])
-    end_point = [9.9, 9.9]
-
-    visualize_map(map_boundary, obstacles, {}, end_point)
-
-    td = TrajectoryDesign(map_boundary, obstacles, end_point, [0, 0], 0.1)
-
-    td.receding_horizon()
-    td.plot(plt_traj=True)
-    
-    # # Print distances for each obstacle corner to the endpoint
-    print("Distances from obstacle corners to endpoint:")
-    for obstacle in td.obstacles:
-        for corner in obstacle:
-            print(f"Corner {corner} -> Endpoint: {td.distances[tuple(corner)]:.2f}")
-   
-    
-
-if __name__ == "__main__":
-    main()

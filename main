@@ -1,0 +1,691 @@
+""" Receding Horizon Control for Trajectory Design """
+import numpy as np
+import heapq
+import matplotlib.pyplot as plt
+import gurobipy as gp
+from gurobipy import GRB
+from shapely.geometry import Point, Polygon, MultiPolygon, LineString
+
+#---------------------------------------------------------------
+# Helper Functions
+#---------------------------------------------------------------
+
+def is_path_blocked(point1, point2, obstacles):
+    """Check if the straight line between two points intersects or lies within any obstacle."""
+    line = LineString([point1, point2])
+    for obstacle in obstacles:
+        polygon = Polygon(obstacle)
+        if line.crosses(polygon) or line.within(polygon):
+            return True
+    return False
+
+def visualize_map(map_boundary, obstacles, graph, end_point):
+    """Visualize the map, obstacles, and network."""
+    fig, ax = plt.subplots()
+
+    # Plot map boundary
+    boundary_x, boundary_y = zip(*map_boundary + [map_boundary[0]])
+    ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
+
+    # Plot obstacles
+    for i, obstacle in enumerate(obstacles):
+        obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
+        ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
+
+    # Plot graph edges
+    for node, neighbors in graph.items():
+        for neighbor in neighbors:
+            ax.plot(
+                [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
+            )
+
+    # Plot end point
+    ax.scatter(*end_point, color='red', label='Endpoint')
+
+    ax.set_aspect('equal')
+    plt.legend()
+    plt.title("Map with Obstacles and Network")
+    plt.show()
+
+def get_obstacles(map_boundary, num_obstacles):
+    """Generate random rectangular obstacles within the map."""
+    obstacles = []
+    for _ in range(num_obstacles):
+        x1 = np.random.uniform(0.15*map_boundary[1][0], 0.75*map_boundary[1][0])
+        y1 = np.random.uniform(0.15*map_boundary[2][1], 0.75*map_boundary[2][1])
+        width = np.random.uniform(0.1*map_boundary[1][0], 0.25*map_boundary[1][0])
+        height = np.random.uniform(0.1*map_boundary[2][1], 0.25*map_boundary[2][1])
+        x2 = x1 + width
+        y2 = y1
+        x3 = x2
+        y3 = y1 + height
+        x4 = x1
+        y4 = y3
+        obstacles.append([[x1, y1], [x2, y2], [x3, y3], [x4, y4]])
+    return obstacles
+
+def merge_intersecting_obstacles(obstacles):
+    """Merge intersecting obstacles into a single larger obstacle."""
+    # Convert obstacles to shapely Polygons
+    polygons = [Polygon(obstacle) for obstacle in obstacles]
+
+    # Merge all polygons using buffer(0)
+    merged = MultiPolygon(polygons).buffer(0)
+
+    # Check if merged result is a single Polygon
+    if isinstance(merged, Polygon):
+        return [list(merged.exterior.coords[:-1])]
+
+    # Check if merged result is a MultiPolygon
+    elif isinstance(merged, MultiPolygon):
+        return [list(poly.exterior.coords[:-1]) for poly in merged.geoms]
+
+    # If no merging occurs (fallback)
+    return obstacles
+
+def update_state(state, control, dt):
+    """Simple unicycle model: [x, y, θ, v] with [a, ω] inputs."""
+    x, y, theta, v = state
+    a, omega = control
+    new_v = np.clip(v + a * dt, 0.0, 2.0)
+    new_theta = theta + omega * dt
+    new_x = x + new_v * np.cos(new_theta) * dt
+    new_y = y + new_v * np.sin(new_theta) * dt
+    return np.array([new_x, new_y, new_theta, new_v])
+
+#---------------------------------------------------------------
+# Base Trajectory Planner Class
+#---------------------------------------------------------------
+
+class TrajectoryPlannerBase:
+    """Base class for trajectory planning with common functionality."""
+    
+    def __init__(self, map_boundary, obstacles, end_point, start_point, tau):
+        """Initialize the base planner with map and parameters."""
+        self.map_boundary = map_boundary
+        self.obstacles = merge_intersecting_obstacles(obstacles)
+        self.end_point = end_point
+        self.start_point = start_point
+        self.tau = tau
+        self.graph, self.points = self.build_graph()
+        self.distances = self.dijkstra()
+        self.state = np.array([*start_point, 0.0, 1.0])  # [x, y, θ, v]
+        self.trajectory = [self.state[:2]]  # Initialize trajectory with start point
+    
+    def build_graph(self):
+        """Creates a visibility graph including the start and end points."""
+        points = []
+        for obstacle in self.obstacles:
+            points.extend(obstacle)
+        points.append(self.end_point)
+        points.append(self.start_point)
+
+        graph = {}
+        for i, point1 in enumerate(points):
+            graph[tuple(point1)] = {}
+            for j, point2 in enumerate(points):
+                if i != j and not is_path_blocked(point1, point2, self.obstacles):
+                    dist = np.linalg.norm(np.array(point1) - np.array(point2))
+                    graph[tuple(point1)][tuple(point2)] = dist
+
+        return graph, points
+    
+    def dijkstra(self):
+        """Dijkstra's algorithm to find the shortest path from endpoint to all other nodes."""
+        edges = [(node, neighbor, weight) for node, neighbors in self.graph.items() 
+                 for neighbor, weight in neighbors.items()]
+        adj = {node: [] for node in self.graph}
+        for node, neighbor, weight in edges:
+            adj[node].append((neighbor, weight))
+            adj[neighbor].append((node, weight))
+
+        # Initialize all points with infinity distance
+        shortest = {tuple(point): float('inf') for point in self.points}
+        shortest[tuple(self.end_point)] = 0
+        
+        minHeap = [[0, tuple(self.end_point)]]
+        while minHeap:
+            w1, n1 = heapq.heappop(minHeap)
+            if n1 in shortest and w1 > shortest[n1]:
+                continue
+            shortest[n1] = w1
+            if n1 in adj:  # Check if n1 has neighbors
+                for n2, w2 in adj[n1]:
+                    if n2 not in shortest or shortest[n2] > w1 + w2:
+                        shortest[n2] = w1 + w2
+                        heapq.heappush(minHeap, [w1 + w2, n2])
+        
+        return shortest
+    
+    def plot(self, plt_traj=True):
+        """Plot the map, obstacles, and trajectory."""
+        fig, ax = plt.subplots()
+        
+        # Plot map boundary
+        boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
+        ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
+        
+        # Plot obstacles
+        for i, obstacle in enumerate(self.obstacles):
+            obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
+            ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
+        
+        # Plot end and start points
+        ax.scatter(*self.end_point, color='red', label='Endpoint')
+        ax.scatter(*self.start_point, color='green', label='Startpoint')
+        
+        # Plot trajectory if requested
+        if plt_traj and len(self.trajectory) > 1:
+            for i in range(len(self.trajectory)-1):
+                ax.plot([self.trajectory[i][0], self.trajectory[i+1][0]], 
+                        [self.trajectory[i][1], self.trajectory[i+1][1]], color='green')
+                ax.arrow(self.trajectory[i][0], self.trajectory[i][1],
+                        self.trajectory[i+1][0] - self.trajectory[i][0],
+                        self.trajectory[i+1][1] - self.trajectory[i][1],
+                        head_width=0.1, head_length=0.1, fc='green', ec='green')
+        
+        ax.set_aspect('equal')
+        plt.legend()
+        plt.title("Trajectory Planning Visualization")
+        plt.show()
+    
+    def visualize_dynamics(self):
+        """Visualize dynamics of the trajectory (velocity, heading)."""
+        if len(self.trajectory) < 2:
+            print("No trajectory to visualize")
+            return
+            
+        # Extract positions
+        positions = np.array(self.trajectory)
+        
+        # Calculate velocities and headings
+        velocities = []
+        headings = []
+        
+        for i in range(1, len(positions)):
+            # Calculate approximate velocity and heading
+            displacement = positions[i] - positions[i-1]
+            velocity = np.linalg.norm(displacement) / self.tau
+            heading = np.arctan2(displacement[1], displacement[0])
+            
+            velocities.append(velocity)
+            headings.append(heading)
+        
+        # Plot dynamics
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
+        
+        # Plot velocity profile
+        ax1.plot(velocities)
+        ax1.set_title('Velocity Profile')
+        ax1.set_xlabel('Step')
+        ax1.set_ylabel('Velocity (units/s)')
+        ax1.grid(True)
+        
+        # Plot heading profile
+        ax2.plot(headings)
+        ax2.set_title('Heading Profile')
+        ax2.set_xlabel('Step')
+        ax2.set_ylabel('Heading (radians)')
+        ax2.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+
+#---------------------------------------------------------------
+# Standard Trajectory Planner (Original Implementation)
+#---------------------------------------------------------------
+
+class StandardTrajectoryPlanner(TrajectoryPlannerBase):
+    """Original trajectory planner without dynamic feasibility constraints."""
+    
+    def plan_trajectory(self):
+        """Run the trajectory planning algorithm."""
+        print("Planning trajectory with standard approach...")
+        self.receding_horizon()
+        return self.trajectory
+    
+    def receding_horizon(self, max_iterations=1000):
+        """Plan trajectory with receding horizon control."""
+        current_state = self.state
+        self.trajectory = [current_state[:2]]
+        iteration = 0
+        no_progress_counter = 0
+        
+        # For detecting lack of progress
+        prev_distance = np.linalg.norm(current_state[:2] - self.end_point)
+        
+        while np.linalg.norm(current_state[:2] - self.end_point) > 0.5:
+            iteration += 1
+            if iteration > max_iterations:
+                print(f"Stopping after {max_iterations} iterations")
+                break
+                
+            # Plan next move
+            next_state = self.plan_next_move(current_state)
+            
+            # Check if a feasible path was found
+            if next_state is None:
+                print("No feasible path found, trying random exploration...")
+                next_state = self.random_exploration(current_state, allow_temporary_retreat=True)
+                if next_state is None:
+                    print("Random exploration failed. Stopping.")
+                    break
+        
+            # Calculate movement progress
+            position_change = np.linalg.norm(next_state[:2] - current_state[:2])
+            if position_change < 0.01:
+                no_progress_counter += 1
+                print(f"No movement detected ({no_progress_counter}/3)")
+                if no_progress_counter >= 3:
+                    print("Vehicle is stuck. Trying aggressive random exploration...")
+                    next_state = self.aggressive_exploration(current_state)
+                    if next_state is None:
+                        print("Failed to escape. Stopping.")
+                        break
+                    no_progress_counter = 0
+            else:
+                no_progress_counter = 0
+            
+            # Track goal progress
+            current_distance = np.linalg.norm(next_state[:2] - self.end_point)
+            
+            print(f"Iteration {iteration}: Moving from {current_state[:2]} to {next_state[:2]}, "
+                  f"distance: {current_distance:.4f}")
+            
+            self.trajectory.append(next_state[:2])
+            prev_distance = current_distance
+            current_state = next_state
+    
+    def plan_next_move(self, current_state):
+        """Plan the next move using motion primitives."""
+        controls = [
+            (0.0, 0.0),     # maintain course
+            (0.0, 0.1),     # slight left
+            (0.0, -0.1),    # slight right
+            (0.0, 0.3),     # medium left turn
+            (0.0, -0.3),    # medium right turn
+            (0.0, 0.5),     # sharp left
+            (0.0, -0.5),    # sharp right
+            (0.1, 0.0),     # slight acceleration
+            (0.2, 0.0),     # medium acceleration
+            (-0.1, 0.0),    # slight deceleration
+            (-0.2, 0.0),    # medium deceleration
+            (0.1, 0.1),     # accelerate + left
+            (0.1, -0.1),    # accelerate + right
+            (-0.1, 0.1),    # decelerate + left
+            (-0.1, -0.1),   # decelerate + right
+        ]
+
+        best_cost = float('inf')
+        best_next_state = None
+        current_pos = current_state[:2]
+        
+        # Add current position to graph temporarily for better heuristic
+        current_pos_tuple = tuple(current_pos)
+        self.graph[current_pos_tuple] = {}
+        
+        # Connect current position to visible nodes
+        for point in self.points:
+            point_tuple = tuple(point)
+            if not is_path_blocked(current_pos, point, self.obstacles):
+                dist = np.linalg.norm(np.array(current_pos) - np.array(point))
+                self.graph[current_pos_tuple][point_tuple] = dist
+                self.graph[point_tuple][current_pos_tuple] = dist
+    
+        # Update distances with current position
+        temp_distances = self.dijkstra()
+    
+        # Direction to goal for heading bias
+        goal_direction = np.array(self.end_point) - current_pos
+        if np.linalg.norm(goal_direction) > 0:
+            goal_direction = goal_direction / np.linalg.norm(goal_direction)
+
+        # Try each control input with improved evaluation
+        for u in controls:
+            next_state = update_state(current_state, u, self.tau)
+            start = current_state[:2]
+            end = next_state[:2]
+            
+            # Skip if blocked
+            if is_path_blocked(start, end, self.obstacles):
+                continue
+                
+            # Calculate costs with multiple components
+            
+            # 1. Immediate motion cost
+            travel_cost = np.linalg.norm(np.array(end) - start)
+            
+            # 2. Distance to goal estimate
+            if tuple(end) in temp_distances:
+                # If we have a direct distance in the graph
+                terminal_cost = temp_distances[tuple(end)]
+            else:
+                # Otherwise use nearest node as estimate
+                try:
+                    nearest_node = min(temp_distances.keys(), 
+                                      key=lambda n: np.linalg.norm(np.array(n) - end))
+                    terminal_cost = temp_distances[nearest_node] + \
+                                   np.linalg.norm(np.array(nearest_node) - end)
+                except ValueError:  # If temp_distances is empty
+                    terminal_cost = np.linalg.norm(np.array(end) - np.array(self.end_point))
+            
+            # 3. Heading alignment with goal direction
+            movement_direction = np.array(end) - start
+            if np.linalg.norm(movement_direction) > 0:
+                movement_direction = movement_direction / np.linalg.norm(movement_direction)
+                heading_alignment = np.dot(movement_direction, goal_direction)
+                # Reward alignment with goal direction
+                heading_cost = -0.5 * heading_alignment  # Negative because we minimize cost
+            else:
+                heading_cost = 0
+                
+            # 4. Penalize staying still
+            stillness_cost = 0.2 if travel_cost < 0.01 else 0
+            
+            # Combined cost
+            total_cost = travel_cost + terminal_cost + heading_cost + stillness_cost
+
+            if total_cost < best_cost:
+                best_cost = total_cost
+                best_next_state = next_state
+                
+        # Clean up temporary graph modifications
+        for point_tuple in list(self.graph.get(current_pos_tuple, {}).keys()):
+            if point_tuple in self.graph:
+                self.graph[point_tuple].pop(current_pos_tuple, None)
+        self.graph.pop(current_pos_tuple, None)
+
+        return best_next_state
+    
+    def random_exploration(self, current_state, attempts=20, allow_temporary_retreat=False):
+        """Try random controls to find a valid next state when stuck."""
+        for _ in range(attempts):
+            # Generate random control inputs
+            a = np.random.uniform(-0.3, 0.3)
+            omega = np.random.uniform(-0.7, 0.7)
+            
+            next_state = update_state(current_state, (a, omega), self.tau)
+            
+            # Check if this path is blocked
+            if not is_path_blocked(current_state[:2], next_state[:2], self.obstacles):
+                # If we allow temporary retreat from goal, accept any valid move
+                if allow_temporary_retreat:
+                    return next_state
+                    
+                # Otherwise, check if this makes progress toward the goal
+                current_dist = np.linalg.norm(current_state[:2] - self.end_point)
+                next_dist = np.linalg.norm(next_state[:2] - self.end_point)
+                
+                # Accept if it moves closer to goal or at least not much further
+                if next_dist < current_dist * 1.1:
+                    return next_state
+    
+        return None
+    
+    def aggressive_exploration(self, current_state, attempts=50):
+        """Try more aggressive random moves when completely stuck."""
+        best_state = None
+        max_distance = 0
+        
+        for _ in range(attempts):
+            # Generate random control inputs with larger ranges
+            a = np.random.uniform(-0.5, 0.5)
+            omega = np.random.uniform(-1.0, 1.0)
+            
+            # Try a larger step size
+            next_state = update_state(current_state, (a, omega), self.tau * 3)
+            
+            # Check if this path is blocked
+            if not is_path_blocked(current_state[:2], next_state[:2], self.obstacles):
+                # Prioritize moves that are different from current position
+                distance_moved = np.linalg.norm(next_state[:2] - current_state[:2])
+                if distance_moved > max_distance:
+                    max_distance = distance_moved
+                    best_state = next_state
+    
+        return best_state
+
+#---------------------------------------------------------------
+# MILP Trajectory Planner with Dynamic Feasibility
+#---------------------------------------------------------------
+
+class MILPTrajectoryPlanner(TrajectoryPlannerBase):
+    """MILP-based trajectory planner with dynamic feasibility constraints."""
+    
+    def plan_trajectory(self, horizon=5, max_iterations=20):
+        """Run the trajectory planning algorithm with MILP."""
+        print("Planning trajectory with MILP approach...")
+        self.receding_horizon_milp(horizon, max_iterations)
+        return self.trajectory
+    
+    def receding_horizon_milp(self, horizon=5, max_iterations=20):
+        """Plan trajectory with receding horizon control using MILP."""
+        current_state = self.state
+        self.trajectory = [current_state[:2]]
+        iteration = 0
+        
+        while np.linalg.norm(current_state[:2] - self.end_point) > 0.5:
+            iteration += 1
+            if iteration > max_iterations:
+                print(f"Stopping after {max_iterations} iterations")
+                break
+            
+            print(f"MILP Iteration {iteration}: Planning from {current_state[:2]}")
+            
+            # Plan trajectory with MILP
+            trajectory = self.plan_trajectory_milp(current_state, horizon)
+            
+            if trajectory is None or len(trajectory) < 2:
+                print("MILP planning failed, trying random exploration...")
+                next_state = self.random_exploration(current_state)
+                if next_state is None:
+                    print("Random exploration failed. Stopping.")
+                    break
+                current_state = next_state
+            else:
+                # Take the next state from the trajectory
+                next_state = trajectory[1]  # Skip the first state which is the current state
+                current_state = next_state
+            
+            print(f"  Moving to {current_state[:2]}, " 
+                  f"distance: {np.linalg.norm(current_state[:2] - self.end_point):.4f}")
+            
+            self.trajectory.append(current_state[:2])
+    
+    def plan_trajectory_milp(self, current_state, horizon=5):
+        """Plan a trajectory using Mixed Integer Linear Programming (MILP)."""
+        try:
+            # Create a new model
+            model = gp.Model("trajectory_planning")
+            model.setParam('OutputFlag', 0)  # Suppress output except for final solution
+            
+            # Time step for discretization
+            dt = self.tau
+            
+            # Maximum velocity and control bounds
+            max_velocity = 2.0
+            max_accel = 0.5
+            
+            # Create variables for each time step
+            x = model.addVars(horizon+1, lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name="x")
+            y = model.addVars(horizon+1, lb=-gp.GRB.INFINITY, ub=gp.GRB.INFINITY, name="y")
+            v = model.addVars(horizon+1, lb=0, ub=max_velocity, name="v")
+            
+            # Control inputs
+            a = model.addVars(horizon, lb=-max_accel, ub=max_accel, name="a")
+            
+            # Direction variables (linearized approach instead of using theta)
+            dx = model.addVars(horizon, lb=-1, ub=1, name="dx")
+            dy = model.addVars(horizon, lb=-1, ub=1, name="dy")
+            
+            # Set initial state
+            x[0] = current_state[0]
+            y[0] = current_state[1]
+            v[0] = current_state[3]
+            
+            # Direction discretization
+            for t in range(horizon):
+                # Add 8 binary variables for direction segments
+                segs = model.addVars(8, vtype=GRB.BINARY, name=f"dir_seg_{t}")
+                model.addConstr(segs.sum() == 1)  # Exactly one segment active
+                
+                # Define 8 directions (unit vectors)
+                directions = [
+                    (1, 0), (0.7071, 0.7071), (0, 1), (-0.7071, 0.7071),
+                    (-1, 0), (-0.7071, -0.7071), (0, -1), (0.7071, -0.7071)
+                ]
+                
+                # Constrain dx, dy to be a convex combination of adjacent directions
+                model.addConstr(dx[t] == gp.quicksum(directions[i][0] * segs[i] for i in range(8)))
+                model.addConstr(dy[t] == gp.quicksum(directions[i][1] * segs[i] for i in range(8)))
+        
+            # Linearized dynamics
+            for t in range(horizon):
+                model.addConstr(x[t+1] == x[t] + v[t] * dt * dx[t])
+                model.addConstr(y[t+1] == y[t] + v[t] * dt * dy[t])
+                model.addConstr(v[t+1] == v[t] + a[t] * dt)
+        
+            # Obstacle avoidance constraints
+            for t in range(1, horizon+1):
+                for obs_idx, obstacle in enumerate(self.obstacles):
+                    # Add binary variables for each edge of the obstacle
+                    binary_vars = []
+                    
+                    for i in range(len(obstacle)):
+                        p1 = obstacle[i]
+                        p2 = obstacle[(i+1) % len(obstacle)]
+                        
+                        # Vector normal to the edge (pointing outward)
+                        edge_vec = np.array([p2[0] - p1[0], p2[1] - p1[1]])
+                        normal = np.array([-edge_vec[1], edge_vec[0]])  # Rotate 90 degrees
+                        
+                        # Ensure normal points outward
+                        center = np.mean(obstacle, axis=0)
+                        edge_midpoint = np.array([(p1[0] + p2[0])/2, (p1[1] + p2[1])/2])
+                        outward = edge_midpoint - center
+                        
+                        if np.dot(normal, outward) < 0:
+                            normal = -normal  # Flip if pointing inward
+                        
+                        # Normalize
+                        norm = np.linalg.norm(normal)
+                        if norm > 0:
+                            normal = normal / norm
+                        
+                        # Create binary variable for this edge
+                        b = model.addVar(vtype=GRB.BINARY, name=f"b_{t}_{obs_idx}_{i}")
+                        binary_vars.append(b)
+                        
+                        # Set up the constraint: point must be on outside of edge
+                        M = 100  # Big-M value
+                        model.addConstr(
+                            (x[t] - p1[0])*normal[0] + (y[t] - p1[1])*normal[1] >= -M*(1-b)
+                        )
+                    
+                    # Must satisfy at least one edge constraint
+                    model.addConstr(gp.quicksum(binary_vars) >= 1)
+        
+            # Objective function
+            goal_x, goal_y = self.end_point
+            
+            # Distance to goal at final state
+            final_dist = (x[horizon] - goal_x)*(x[horizon] - goal_x) + (y[horizon] - goal_y)*(y[horizon] - goal_y)
+            
+            # Approach goal at each step
+            approach_goal = gp.quicksum(
+                ((x[t] - goal_x)*(x[t] - goal_x) + (y[t] - goal_y)*(y[t] - goal_y)) for t in range(horizon+1)
+            )
+            
+            # Control effort
+            control_effort = gp.quicksum(a[t]*a[t] for t in range(horizon))
+            
+            # Objective weights
+            w_final = 10.0
+            w_approach = 1.0
+            w_control = 0.1
+            
+            model.setObjective(
+                w_final * final_dist + 
+                w_approach * approach_goal + 
+                w_control * control_effort, 
+                GRB.MINIMIZE
+            )
+            
+            # Solve the optimization problem
+            model.optimize()
+            
+            if model.status == GRB.OPTIMAL:
+                # Extract the optimal trajectory
+                trajectory = []
+                for t in range(horizon+1):
+                    # Calculate theta from dx, dy for t > 0
+                    if t > 0:
+                        theta_val = np.arctan2(dy[t-1].X, dx[t-1].X)
+                    else:
+                        theta_val = current_state[2]
+                    
+                    state = np.array([x[t].X, y[t].X, theta_val, v[t].X])
+                    trajectory.append(state)
+                
+                return trajectory
+            else:
+                print(f"Optimization failed with status {model.status}")
+                return None
+                
+        except gp.GurobiError as e:
+            print(f"Gurobi error: {e}")
+            return None
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Error in MILP planning: {e}")
+            return None
+    
+    def random_exploration(self, current_state, attempts=20):
+        """Try random controls to find a valid next state when stuck."""
+        for _ in range(attempts):
+            # Generate random control inputs
+            a = np.random.uniform(-0.3, 0.3)
+            omega = np.random.uniform(-0.7, 0.7)
+            
+            next_state = update_state(current_state, (a, omega), self.tau)
+            
+            # Check if this path is blocked
+            if not is_path_blocked(current_state[:2], next_state[:2], self.obstacles):
+                return next_state
+    
+        return None
+
+#---------------------------------------------------------------
+# Main Function
+#---------------------------------------------------------------
+
+def main():
+    """Main function to run the trajectory planning demo."""
+    # Setup environment
+    map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
+    obstacles = get_obstacles(map_boundary, 4)
+    end_point = [9.9, 9.9]
+    start_point = [0.1, 0.1]
+    
+    # Visualize the environment
+    visualize_map(map_boundary, obstacles, {}, end_point)
+    
+    # Choose which planner to use
+    planner_type = input("Choose planner type (1 for Standard, 2 for MILP): ")
+    
+    if planner_type == "2":
+        print("\nUsing MILP Trajectory Planner with Dynamic Feasibility")
+        planner = MILPTrajectoryPlanner(map_boundary, obstacles, end_point, start_point, tau=0.2)
+        planner.plan_trajectory(horizon=5, max_iterations=20)
+    else:
+        print("\nUsing Standard Trajectory Planner")
+        planner = StandardTrajectoryPlanner(map_boundary, obstacles, end_point, start_point, tau=0.2)
+        planner.plan_trajectory()
+    
+    # Visualize results
+    planner.plot(plt_traj=True)
+    planner.visualize_dynamics()
+
+if __name__ == "__main__":
+    main()
