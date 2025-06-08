@@ -8,273 +8,146 @@ from utils.visualization import visualize_map
 from utils.geometry import approximate_arc
 
 def test_trajectory_tree():
-    """Test the trajectory tree generation."""
-    # Load map data
-    map_path = Path(__file__).parent.parent / 'maps' / 'scenarios' / 'basic_map.json'
-    
-    if not map_path.exists():
-        print(f"Error: Map file not found at {map_path}")
-        # Try basic_map as fallback
-        map_path = Path(__file__).parent.parent / 'maps' / 'scenarios' / 'basic_map.json'
-        if not map_path.exists():
-            print(f"Error: Fallback map file not found at {map_path}")
-            return
-    
+    """Test the trajectory tree generation with corrected visualization."""
+    # --- 1. Load Map and Initialize Planner (Your code is correct here) ---
+    map_path = Path(__file__).parent.parent / 'maps' / 'scenarios' / 'paper_validation.json'
     with open(map_path, 'r') as f:
         map_data = json.load(f)
     
-    # Extract map data
     map_boundary = map_data['map_boundary']
     obstacles = map_data['obstacles']
     start_point = map_data['start_point']
     end_point = map_data['end_point']
     
-    print(f"Loaded map: {map_data['name']}")
-    print(f"Obstacles: {len(obstacles)}")
-    
-    # Visualize the environment
-    visualize_map(map_boundary, obstacles, {}, end_point)
-    
-    # Create goal and initial states
-    # For Bellingham's approach, we need velocity information
-    goal_state = {'pos': end_point, 'vel': (1.0, 0.0)}  # Assume moving right at goal
-    ini_state = {'pos': start_point, 'vel': (1.0, 0.0)}  # Assume moving right at start
-    
-    # Initialize the planner
-    v_max = 1.0  # Maximum velocity
-    turning_radius = 2.0  # Minimum turning radius
-    Delta_T = 0.1  # Time step
-    N = 10  # Horizon length
-    N_exec = 5  # Number of steps to execute
+    goal_state = {'pos': end_point, 'vel': (1.0, 0.0)} # Arrive heading left
     
     planner = MILPTrajectoryPlanner(
         map_boundary=map_boundary,
         obstacles=obstacles,
-        goal_state=[end_point],  # Format expected by your constructor
-        ini_state=[start_point],  # Format expected by your constructor
-        v_max=v_max,
-        turning_radius=turning_radius,
-        Delta_T=Delta_T,
-        N=N,
-        N_exec=N_exec
+        goal_state=[end_point],
+        ini_state=[start_point],
+        v_max=1.0, turning_radius=1.0, Delta_T=0.1, N=10, N_exec=5
     )
     
-    # Build the trajectory tree
+    # --- 2. Build the Tree (Your code is correct here) ---
     print("Building trajectory tree...")
     node_dict = planner.build_feasible_traj_tree(
         start_pos=start_point,
         goal_state=goal_state
     )
-    
-    # Print results
     print(f"Tree generation complete. Found {len(node_dict)} nodes.")
-    reachable_nodes = sum(1 for n in node_dict.values() if n.cost_to_go < float('inf'))
-    print(f"Reachable nodes: {reachable_nodes}")
-    
-    # ===== Visualization of Tree =====
-    plt.figure(figsize=(15, 10))
-    
-    # Plot obstacles
-    for obstacle in obstacles:
-        obstacle_x = [p[0] for p in obstacle] + [obstacle[0][0]]  # Close the polygon
-        obstacle_y = [p[1] for p in obstacle] + [obstacle[0][1]]
-        plt.plot(obstacle_x, obstacle_y, 'k-', linewidth=1)
-    
-    # Plot turning circles
-    circle_count = 0
-    circle_limit = 30  # Limit number of circles to avoid clutter
-    
-    # First plot circles for special nodes (start and goal)
-    for special_id in ['start', 'goal']:
-        if special_id in node_dict:
-            node_obj = node_dict[special_id]
-            
-            # Only draw circles for nodes with valid velocities
-            if node_obj.vel is not None and node_obj.cost_to_go < float('inf'):
-                # Draw CW circle
-                if node_obj.circle_cw is not None:
-                    circle = plt.Circle(node_obj.circle_cw, planner.rho, 
-                                      fill=False, color='blue', alpha=0.5, linestyle='--')
-                    plt.gca().add_patch(circle)
-                    plt.plot(node_obj.circle_cw[0], node_obj.circle_cw[1], 'bx', markersize=4)
-                
-                # Draw CCW circle
-                if node_obj.circle_ccw is not None:
-                    circle = plt.Circle(node_obj.circle_ccw, planner.rho, 
-                                      fill=False, color='red', alpha=0.5, linestyle='--')
-                    plt.gca().add_patch(circle)
-                    plt.plot(node_obj.circle_ccw[0], node_obj.circle_ccw[1], 'rx', markersize=4)
-                
-                # Show velocity vector
-                arrow_len = 1.0  # Scale factor for better visibility
-                plt.arrow(node_obj.pos[0], node_obj.pos[1], 
-                          node_obj.vel[0]*arrow_len, node_obj.vel[1]*arrow_len,
-                          head_width=0.2, head_length=0.3, fc='green', ec='green')
-    
-    # Then draw for a limited number of other nodes with valid costs
-    for node_id, node_obj in node_dict.items():
-        if node_id not in ['start', 'goal'] and node_obj.cost_to_go < float('inf'):
-            if circle_count >= circle_limit:
-                break
-                
-            if node_obj.circle_cw is not None:
-                circle = plt.Circle(node_obj.circle_cw, planner.rho, 
-                                  fill=False, color='blue', alpha=0.2, linestyle=':')
-                plt.gca().add_patch(circle)
-                
-            if node_obj.circle_ccw is not None:
-                circle = plt.Circle(node_obj.circle_ccw, planner.rho, 
-                                  fill=False, color='red', alpha=0.2, linestyle=':')
-                plt.gca().add_patch(circle)
-                
-            circle_count += 1
-    
-    # Plot tree edges (paths between nodes)
-    for node_id, node_obj in node_dict.items():
-        if hasattr(node_obj, 'successor') and node_obj.successor and hasattr(node_obj, 'path_geometry') and node_obj.path_geometry:
-            succ_id = node_obj.successor
-            if succ_id in node_dict:
-                succ_node = node_dict[succ_id]
-                
-                # Extract path geometry
-                path_geom = node_obj.path_geometry
-                tangent_point = path_geom['tangent_point']
-                circle_type = path_geom['type']
-                
-                # 1. Draw the straight line from node to tangent point
-                plt.plot([node_obj.pos[0], tangent_point[0]], 
-                         [node_obj.pos[1], tangent_point[1]], 
-                         'b-', alpha=0.5, linewidth=0.5)
-                
-                # 2. Draw the circular arc from tangent point to successor
-                # Determine which circle to use
-                if circle_type == 'cw':
-                    circle_center = node_obj.circle_cw
-                else:  # 'ccw'
-                    circle_center = node_obj.circle_ccw
-                    
-                # Approximate the arc with points
-                arc_points = approximate_arc(tangent_point, succ_node.pos, 
-                                            circle_center, planner.rho, circle_type, 15)
-                
-                # Draw the arc as a series of line segments
-                for i in range(len(arc_points)-1):
-                    plt.plot([arc_points[i][0], arc_points[i+1][0]], 
-                             [arc_points[i][1], arc_points[i+1][1]], 
-                             'b-', alpha=0.5, linewidth=0.5)
+    print_node_dict(node_dict)
 
+    # --- 3. Visualize the FULL Kinodynamic Tree (Corrected Logic) ---
+    fig, ax = plt.subplots(figsize=(16, 12))
     
-    # Plot nodes
+    # Plot obstacles and boundary
+    for obstacle in obstacles:
+        ax.add_patch(plt.Polygon(obstacle, closed=True, color='darkgray'))
+    ax.plot(*zip(*(map_boundary + [map_boundary[0]])), 'k--') # Plot boundary
+
+    # Plot the full tree edges (the kinodynamic paths)
+    for node_obj in node_dict.values():
+        # Check if the node has a valid path to a successor
+        if node_obj.successor and hasattr(node_obj, 'path_geometry'):
+            succ_node = node_dict[node_obj.successor]
+            path_geom = node_obj.path_geometry
+            tangent_point = path_geom['tangent_point']
+            circle_type = path_geom['type']
+
+            # --- KEY FIX 1: Use the SUCCESSOR's circle center ---
+            # The path connects TO the successor's turning circle.
+            if circle_type == 'cw':
+                circle_center = succ_node.circle_cw
+            else:
+                circle_center = succ_node.circle_ccw
+
+            if circle_center is None: continue
+
+            # a) Draw the straight line segment
+            ax.plot([node_obj.pos[0], tangent_point[0]], 
+                    [node_obj.pos[1], tangent_point[1]], 
+                    'b-', alpha=0.4, linewidth=0.8)
+            
+            # b) Draw the circular arc segment
+            arc_points = approximate_arc(tangent_point, succ_node.pos, 
+                                        circle_center, planner.rho, circle_type, 15)
+            ax.plot(*zip(*arc_points), 'r-', alpha=0.4, linewidth=0.8)
+
+    # Plot nodes on top of the paths
     for node_id, node_obj in node_dict.items():
         if node_id == 'start':
-            plt.plot(node_obj.pos[0], node_obj.pos[1], 'go', markersize=10, label='Start')
+            ax.plot(node_obj.pos[0], node_obj.pos[1], 'go', markersize=10, zorder=5)
         elif node_id == 'goal':
-            plt.plot(node_obj.pos[0], node_obj.pos[1], 'ro', markersize=10, label='Goal')
-        elif node_obj.cost_to_go < float('inf'):  # Only plot reachable nodes
-            plt.plot(node_obj.pos[0], node_obj.pos[1], 'bo', markersize=3)
-    
-    # Plot map boundary
-    boundary_x = [p[0] for p in map_boundary] + [map_boundary[0][0]]
-    boundary_y = [p[1] for p in map_boundary] + [map_boundary[0][1]]
-    plt.plot(boundary_x, boundary_y, 'k--', linewidth=1)
-    
-    # Create legend with custom elements
-    from matplotlib.lines import Line2D
-    legend_elements = [
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='g', markersize=10, label='Start'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='r', markersize=10, label='Goal'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='b', markersize=6, label='Vertex Node'),
-        Line2D([0], [0], color='blue', lw=1, linestyle='--', label='CW Turning Circle'),
-        Line2D([0], [0], color='red', lw=1, linestyle='--', label='CCW Turning Circle'),
-        Line2D([0], [0], color='green', lw=1, label='Velocity Vector')
-    ]
-    plt.legend(handles=legend_elements, loc='upper left')
-    
-    plt.title('Trajectory Tree with Turning Circles')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.grid(True)
-    plt.axis('equal')
-    plt.tight_layout()
+            ax.plot(node_obj.pos[0], node_obj.pos[1], 'ro', markersize=10, zorder=5)
+        elif node_obj.cost_to_go < float('inf'):
+            ax.plot(node_obj.pos[0], node_obj.pos[1], 'bo', markersize=4, zorder=5)
+
+    ax.set_title('Full Kinodynamic Trajectory Tree')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.grid(True)
+    ax.axis('equal')
     plt.show()
-    
-    # ===== Plot optimal path if found =====
-    if 'start' in node_dict and node_dict['start'].cost_to_go < float('inf'):
-        print(f"Path found! Cost: {node_dict['start'].cost_to_go:.2f}")
-        
-        # Trace path from start to goal
-        current_id = 'start'
-        path = [node_dict[current_id].pos]
-        path_nodes = [current_id]
-        
-        while hasattr(node_dict[current_id], 'successor') and node_dict[current_id].successor:
-            current_id = node_dict[current_id].successor
-            path.append(node_dict[current_id].pos)
-            path_nodes.append(current_id)
-            if current_id == 'goal':
-                break
-        
-        # Plot the path
-        plt.figure(figsize=(15, 10))
-        
-        # Plot obstacles
+
+    # --- 4. Visualize the SINGLE OPTIMAL PATH (Corrected Logic) ---
+    if node_dict['start'].cost_to_go < float('inf'):
+        print(f"Optimal path from start found! Total Cost: {node_dict['start'].cost_to_go:.2f}")
+        fig, ax = plt.subplots(figsize=(16, 12))
+
+        # Plot obstacles and boundary
         for obstacle in obstacles:
-            obstacle_x = [p[0] for p in obstacle] + [obstacle[0][0]]
-            obstacle_y = [p[1] for p in obstacle] + [obstacle[0][1]]
-            plt.plot(obstacle_x, obstacle_y, 'k-', linewidth=1)
-        
-        # Plot turning circles for nodes in the path
-        for i in range(len(path_nodes)-1):
-            node_id = path_nodes[i]
-            node_obj = node_dict[node_id]
-            next_node = node_dict[path_nodes[i+1]]
+            ax.add_patch(plt.Polygon(obstacle, closed=True, color='darkgray'))
+        ax.plot(*zip(*(map_boundary + [map_boundary[0]])), 'k--')
+
+        # Trace the path from start to goal
+        current_id = 'start'
+        while current_id != 'goal' and node_dict[current_id].successor:
+            node_obj = node_dict[current_id]
+            succ_node = node_dict[node_obj.successor]
             
-            # Draw circles
-            if node_obj.circle_cw is not None:
-                circle = plt.Circle(node_obj.circle_cw, planner.rho, 
-                                  fill=False, color='blue', alpha=0.3, linestyle='--')
-                plt.gca().add_patch(circle)
-                
-            if node_obj.circle_ccw is not None:
-                circle = plt.Circle(node_obj.circle_ccw, planner.rho, 
-                                  fill=False, color='red', alpha=0.3, linestyle='--')
-                plt.gca().add_patch(circle)
-            
-            # Draw velocity vector
-            if node_obj.vel is not None:
-                arrow_len = 1.0
-                plt.arrow(node_obj.pos[0], node_obj.pos[1], 
-                          node_obj.vel[0]*arrow_len, node_obj.vel[1]*arrow_len,
-                          head_width=0.2, head_length=0.3, fc='green', ec='green')
-        
-        # Plot path
-        path_x = [p[0] for p in path]
-        path_y = [p[1] for p in path]
-        plt.plot(path_x, path_y, 'g-', linewidth=2, label='Optimal Path')
-        
-        # Mark nodes on path
-        for i, node_id in enumerate(path_nodes):
-            pos = node_dict[node_id].pos
-            if i == 0:
-                plt.plot(pos[0], pos[1], 'go', markersize=10, label='Start')
-            elif i == len(path_nodes)-1:
-                plt.plot(pos[0], pos[1], 'ro', markersize=10, label='Goal')
+            # Draw the kinodynamic segment for this step in the path
+            path_geom = node_obj.path_geometry
+            tangent_point = path_geom['tangent_point']
+            circle_type = path_geom['type']
+
+            # --- KEY FIX 2: Draw the straight+arc path, not just a line ---
+            if circle_type == 'cw':
+                circle_center = succ_node.circle_cw
             else:
-                plt.plot(pos[0], pos[1], 'bo', markersize=6)
-                
-        # Plot map boundary
-        plt.plot(boundary_x, boundary_y, 'k--', linewidth=1)
-        
-        plt.title('Optimal Trajectory Path')
-        plt.xlabel('X')
-        plt.ylabel('Y')
-        plt.grid(True)
-        plt.legend()
-        plt.axis('equal')
-        plt.tight_layout()
+                circle_center = succ_node.circle_ccw
+            
+            # Draw circles for context
+            if succ_node.circle_cw: ax.add_patch(plt.Circle(succ_node.circle_cw, planner.rho, fill=False, color='blue', ls='--', alpha=0.5))
+            if succ_node.circle_ccw: ax.add_patch(plt.Circle(succ_node.circle_ccw, planner.rho, fill=False, color='red', ls='--', alpha=0.5))
+            
+            # Draw straight segment
+            ax.plot([node_obj.pos[0], tangent_point[0]], 
+                    [node_obj.pos[1], tangent_point[1]], 
+                    'b-', lw=2)
+            
+            # Draw arc segment
+            arc_points = approximate_arc(tangent_point, succ_node.pos, 
+                                        circle_center, planner.rho, circle_type, 20)
+            ax.plot(*zip(*arc_points), 'r-', lw=2)
+
+            # Move to the next node in the path
+            current_id = node_obj.successor
+
+        # Plot nodes on the path
+        ax.plot(start_point[0], start_point[1], 'go', markersize=12, label='Start')
+        ax.plot(end_point[0], end_point[1], 'ro', markersize=12, label='Goal')
+
+        ax.set_title('Optimal Path from Start to Goal')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.grid(True)
+        ax.axis('equal')
+        ax.legend()
         plt.show()
     else:
         print("No path found from start to goal.")
+
 def test_connecting_segment():
     """Test the connection between two trajectory nodes."""
     # Inside a test script
@@ -377,6 +250,49 @@ def test_connecting_segment():
             plt.show()
         else:
             print("No connection found!")
+
+def print_node_dict(node_dict):
+    """Print the node dictionary in a readable format."""
+    print("\n=== Node Dictionary ===")
+    print(f"Total nodes: {len(node_dict)}")
+    
+    # Group nodes by type
+    start_node = node_dict.get('start')
+    goal_node = node_dict.get('goal')
+    obstacle_nodes = {k: v for k, v in node_dict.items() if k not in ['start', 'goal']}
+    
+    # Print start and goal nodes
+    if start_node:
+        cost_str = f"{start_node.cost_to_go:.2f}" if start_node.cost_to_go != float('inf') else "inf"
+        print(f"Start node: pos={start_node.pos}, cost={cost_str}, successor={start_node.successor}")
+    
+    if goal_node:
+        cost_str = f"{goal_node.cost_to_go:.2f}" if goal_node.cost_to_go != float('inf') else "inf"
+        print(f"Goal node: pos={goal_node.pos}, cost={cost_str}, successor={goal_node.successor}")
+    
+    # Print obstacle nodes
+    reachable_obs = 0
+    unreachable_obs = 0
+    
+    print("\nObstacle Nodes:")
+    print("ID\tPosition\t\tCost\t\tSuccessor")
+    print("-" * 50)
+    
+    for node_id, node_obj in sorted(obstacle_nodes.items()):
+        if node_obj.cost_to_go < float('inf'):
+            status = "REACHABLE"
+            reachable_obs += 1
+            cost_str = f"{node_obj.cost_to_go:.2f}"
+        else:
+            status = "UNREACHABLE"
+            unreachable_obs += 1
+            cost_str = "inf"
+            
+        print(f"{node_id}\t{node_obj.pos}\t{cost_str}\t{node_obj.successor}\t{status}")
+    
+    print(f"\nReachable obstacle nodes: {reachable_obs}/{len(obstacle_nodes)}")
+    print(f"Unreachable obstacle nodes: {unreachable_obs}/{len(obstacle_nodes)}")
+    print("=======================")
 
 if __name__ == "__main__":
     # Run the test for a single connection

@@ -1,12 +1,13 @@
 import numpy as np
 import heapq
-from shapely.geometry import Point, Polygon
+from shapely.geometry import Point, Polygon, LineString
 # Assuming your utility files are in the specified structure
 from utils.geometry import (
     find_tangents_to_circle,
     is_valid_tangent,
     calculate_arc_length,
-    is_path_obstructed
+    is_path_obstructed,
+    approximate_arc
 )
 from utils.obstacles import merge_intersecting_obstacles
 
@@ -156,11 +157,13 @@ class MILPTrajectoryPlanner():
         
         return node_dict
 
+    
+
     def _find_connecting_segment(self, start_pos, target_node):
         """
         Finds the shortest, obstacle-free, kinodynamically feasible path
         from a start position to a target node's state (pos, vel, circles).
-        (Corrected version with the is_valid_tangent check removed)
+        This version is more permissive with tangent validation.
         """
         if target_node.circle_cw is None or target_node.circle_ccw is None:
             return None
@@ -171,32 +174,100 @@ class MILPTrajectoryPlanner():
             tangents = find_tangents_to_circle(start_pos, circle_center, self.rho)
             
             for tangent_point in tangents:
-                # The only filter needed is the obstacle check. The robust arc angle
-                # calculation handles the geometric validity implicitly.
-                if is_path_obstructed(start_pos, tangent_point, target_node.pos, 
-                                    circle_center, circle_type, self.rho, self.obstacle_polygons):
+                # Skip if tangent point is too close to start point
+                if np.linalg.norm(np.array(tangent_point) - np.array(start_pos)) < 1e-9:
+                    continue
+                    
+                # Check for obstruction with more permissive parameters
+                if self._is_kinodynamic_path_obstructed(
+                    start_pos, tangent_point, target_node.pos, 
+                    circle_center, circle_type,
+                    segments=8  # Fewer segments for faster checking
+                ):
                     continue
 
-                # If the path is clear, calculate its total length.
+                # Calculate path lengths
                 straight_len = np.linalg.norm(np.array(tangent_point) - np.array(start_pos))
-                
-                arc_len = calculate_arc_length(tangent_point, target_node.pos, 
-                                            circle_center, self.rho, circle_type)
-                
+                arc_len = calculate_arc_length(
+                    tangent_point, target_node.pos, 
+                    circle_center, self.rho, circle_type
+                )
                 total_len = straight_len + arc_len
                 
-                # This path is a valid candidate.
+                # Calculate initial velocity (normalized direction)
                 direction = np.array(tangent_point) - np.array(start_pos)
-                initial_vel = tuple((direction / np.linalg.norm(direction)) * self.v_max) if np.linalg.norm(direction) > 1e-9 else (0,0)
-
-                path_geom = {'type': circle_type, 'tangent_point': tangent_point}
-                possible_paths.append((total_len, initial_vel, path_geom))
+                if np.linalg.norm(direction) > 1e-9:
+                    initial_vel = tuple((direction / np.linalg.norm(direction)) * self.v_max)
+                    
+                    # Create path geometry information
+                    path_geom = {'type': circle_type, 'tangent_point': tangent_point}
+                    possible_paths.append((total_len, initial_vel, path_geom))
 
         if not possible_paths:
             return None
         
-        # From all valid, unobstructed candidates, return the one with the shortest total length.
+        # Return the path with the minimum total length
         return min(possible_paths, key=lambda x: x[0])
+
+
+    # Place this inside your MILPTrajectoryPlanner class
+
+    # Place this inside your MILPTrajectoryPlanner class
+
+    def _is_kinodynamic_path_obstructed(self, start_pos, tangent_point, target_pos, circle_center, circle_type, segments=10):
+        """
+        A robust check to see if the entire kinodynamic path is obstructed,
+        with a special case to allow travel along obstacle edges between adjacent vertices.
+        (Corrected version to fix AttributeError)
+        """
+        # 1. Check the straight line segment
+        line = LineString([start_pos, tangent_point])
+        if line.length > 1e-9:
+            is_an_edge = False
+            # Check if the line segment is an edge of any obstacle
+            for obs_verts in self.obstacles:
+                for i in range(len(obs_verts)):
+                    p1 = obs_verts[i]
+                    p2 = obs_verts[(i + 1) % len(obs_verts)]
+                    edge = LineString([p1, p2])
+
+                    # --- KEY FIX: Use .coords to access endpoints ---
+                    # This block replaces the incorrect .start and .end attributes.
+                    # It checks if the `line` and `edge` have the same endpoints,
+                    # regardless of their direction.
+                    line_start = Point(line.coords[0])
+                    line_end = Point(line.coords[-1])
+                    edge_start = Point(edge.coords[0])
+                    edge_end = Point(edge.coords[-1])
+
+                    if (line_start.distance(edge_start) < 1e-9 and line_end.distance(edge_end) < 1e-9) or \
+                    (line_start.distance(edge_end) < 1e-9 and line_end.distance(edge_start) < 1e-9):
+                        is_an_edge = True
+                        break
+                if is_an_edge:
+                    break
+            
+            # If the line is not an obstacle edge, perform the standard interior check
+            if not is_an_edge:
+                for polygon in self.obstacle_polygons:
+                    if polygon.buffer(-1e-9).intersects(line):
+                        return True
+
+        # 2. Check the arc segment (this logic remains the same)
+        arc_points = approximate_arc(
+            tangent_point, target_pos, circle_center, 
+            self.rho, circle_type, segments
+        )
+        
+        for i in range(len(arc_points) - 1):
+            segment_line = LineString([arc_points[i], arc_points[i+1]])
+            if segment_line.length < 1e-9: continue
+                
+            for polygon in self.obstacle_polygons:
+                if polygon.buffer(-1e-9).intersects(segment_line):
+                    return True
+                    
+        return False
 
 
     def _get_valid_obstacle_vertices(self):

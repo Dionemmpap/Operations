@@ -3,12 +3,28 @@ import numpy as np
 import math
 
 def is_path_blocked(point1, point2, obstacles):
-    """Check if the straight line between two points intersects or lies within any obstacle."""
+    """
+    Check if the straight line between two points intersects the interior of any obstacle.
+    This is a more robust implementation.
+    """
     line = LineString([point1, point2])
+    
+    # A line of zero length cannot be blocked
+    if line.length < 1e-9:
+        return False
+        
     for obstacle in obstacles:
         polygon = Polygon(obstacle)
-        if line.crosses(polygon) or line.within(polygon):
+        
+        # KEY FIX: Check for intersection with the INTERIOR of the polygon.
+        # We shrink the polygon by a tiny amount to create its interior. This prevents
+        # flagging paths that start or end on a vertex (a boundary point) as collisions,
+        # but correctly flags any path that crosses into the polygon.
+        interior_polygon = polygon.buffer(-1e-9)
+        
+        if line.intersects(interior_polygon):
             return True
+            
     return False
 
 def is_point_on_boundary(point, map_boundary):

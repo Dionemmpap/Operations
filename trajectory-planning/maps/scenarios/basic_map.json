@@ -3,7 +3,7 @@
   "description": "-",
   "map_boundary": [[0, 0], [0, 30], [50, 30], [50, 0]],
   "start_point": [1, 5],
-  "end_point": [45, 10],
+  "end_point": [25, 22],
   "obstacles": [
     [[15, 10], [15, 20], [30, 20], [30, 10]]
     
