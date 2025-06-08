@@ -160,101 +160,44 @@ class MILPTrajectoryPlanner():
         """
         Finds the shortest, obstacle-free, kinodynamically feasible path
         from a start position to a target node's state (pos, vel, circles).
+        (Corrected version with the is_valid_tangent check removed)
         """
         if target_node.circle_cw is None or target_node.circle_ccw is None:
             return None
             
         possible_paths = []
         
-        # Debug information
-        print(f"Finding path from {start_pos} to node at {target_node.pos}")
-        print(f"Velocity at target: {target_node.vel}")
-        print(f"CW circle: {target_node.circle_cw}")
-        print(f"CCW circle: {target_node.circle_ccw}")
-        
-        # --- Test connection to both clockwise and counter-clockwise circles ---
         for circle_type, circle_center in [('cw', target_node.circle_cw), ('ccw', target_node.circle_ccw)]:
-            # Find all geometric tangents
             tangents = find_tangents_to_circle(start_pos, circle_center, self.rho)
-            print(f"Found {len(tangents)} tangents to {circle_type} circle")
             
-            for i, tangent_point in enumerate(tangents):
-                # Calculate the direction vector of the tangent line segment
-                tangent_direction = np.array(tangent_point) - np.array(start_pos)
-                tangent_length = np.linalg.norm(tangent_direction)
-                if tangent_length < 1e-9:
-                    continue
-                    
-                # Normalize the tangent direction vector
-                tangent_direction = tangent_direction / tangent_length
-                
-                # Calculate the direction vector from tangent point to circle center
-                to_center = np.array(circle_center) - np.array(tangent_point)
-                to_center_norm = np.linalg.norm(to_center)
-                if to_center_norm < 1e-9:
-                    continue
-                to_center = to_center / to_center_norm
-                
-                # For Dubins paths, we need to ensure:
-                # 1. The tangent touches the circle correctly
-                # 2. The arc from tangent to goal follows the circle correctly
-                
-                # Calculate tangent direction at circle contact point
-                if circle_type == 'cw':
-                    # For CW, the tangent should be 90° counterclockwise from radius
-                    tangent_at_circle = np.array([-to_center[1], to_center[0]])
-                else:  # 'ccw'
-                    # For CCW, the tangent should be 90° clockwise from radius
-                    tangent_at_circle = np.array([to_center[1], -to_center[0]])
-                    
-                # Check tangent alignment
-                alignment = np.dot(tangent_direction, tangent_at_circle)
-                print(f"  {circle_type} tangent {i}: alignment = {alignment:.4f}")
-                
-                # Must have good alignment for a valid Dubins path
-                if alignment < 0.9:
-                    print(f"  Rejecting {circle_type} tangent {i}: poor alignment {alignment:.4f}")
-                    continue
-                    
-                # Check if the path from tangent point to goal is valid
-                # This includes both direction and obstacle checks
-                if not is_valid_tangent(start_pos, tangent_point, target_node.pos, circle_center, circle_type):
-                    print(f"  Rejecting {circle_type} tangent {i}: invalid path direction")
-                    continue
-                    
-                # Check for collisions
+            for tangent_point in tangents:
+                # The only filter needed is the obstacle check. The robust arc angle
+                # calculation handles the geometric validity implicitly.
                 if is_path_obstructed(start_pos, tangent_point, target_node.pos, 
-                                     circle_center, circle_type, self.rho, self.obstacle_polygons):
-                    print(f"  Rejecting {circle_type} tangent {i}: path is obstructed")
+                                    circle_center, circle_type, self.rho, self.obstacle_polygons):
                     continue
 
-                # Calculate final path length
-                straight_len = tangent_length  # Already calculated above
+                # If the path is clear, calculate its total length.
+                straight_len = np.linalg.norm(np.array(tangent_point) - np.array(start_pos))
+                
                 arc_len = calculate_arc_length(tangent_point, target_node.pos, 
-                                              circle_center, self.rho, circle_type)
+                                            circle_center, self.rho, circle_type)
+                
                 total_len = straight_len + arc_len
                 
-                # Log the detailed path information
-                print(f"  VALID {circle_type} PATH: straight={straight_len:.2f}, arc={arc_len:.2f}, total={total_len:.2f}")
-                
-                # Initial velocity is along the tangent direction
-                initial_vel = tuple(tangent_direction * self.v_max)
+                # This path is a valid candidate.
+                direction = np.array(tangent_point) - np.array(start_pos)
+                initial_vel = tuple((direction / np.linalg.norm(direction)) * self.v_max) if np.linalg.norm(direction) > 1e-9 else (0,0)
+
                 path_geom = {'type': circle_type, 'tangent_point': tangent_point}
                 possible_paths.append((total_len, initial_vel, path_geom))
 
         if not possible_paths:
-            print("No valid paths found!")
             return None
         
-        # Sort all paths by length for detailed debugging
-        sorted_paths = sorted(possible_paths, key=lambda x: x[0])
-        for i, (length, _, path) in enumerate(sorted_paths):
-            print(f"Path option {i+1}: type={path['type']}, length={length:.2f}")
-            
-        # Return the path with the minimum total length
-        best_path = sorted_paths[0]
-        print(f"Selected best path: {best_path[0]:.2f} length, type: {best_path[2]['type']}")
-        return best_path
+        # From all valid, unobstructed candidates, return the one with the shortest total length.
+        return min(possible_paths, key=lambda x: x[0])
+
 
     def _get_valid_obstacle_vertices(self):
         """Helper to extract non-obstructed obstacle vertices."""

@@ -380,8 +380,8 @@ def test_connecting_segment():
 
 if __name__ == "__main__":
     # Run the test for a single connection
-    test_connecting_segment()
+    # test_connecting_segment()
     
     # Run the test for trajectory tree generation
-    # test_trajectory_tree()
+    test_trajectory_tree()
 

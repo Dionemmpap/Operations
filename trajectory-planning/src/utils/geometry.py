@@ -1,5 +1,6 @@
 from shapely.geometry import LineString, Polygon, Point
 import numpy as np
+import math
 
 def is_path_blocked(point1, point2, obstacles):
     """Check if the straight line between two points intersects or lies within any obstacle."""
@@ -97,40 +98,52 @@ def is_valid_tangent(start_pos, tangent_point, target_pos, circle_center, turn_d
     # For counter-clockwise, target should be on left side
     return (turn_dir == 'cw' and cross < 0) or (turn_dir == 'ccw' and cross > 0)
 
-def calculate_arc_length(start_point, end_point, circle_center, radius, turn_dir):
+def calculate_arc_angle(start_point, end_point, circle_center, circle_type):
     """
-    Calculate length of arc on circle.
-    
+    Calculates the angle of the arc from start_point to end_point,
+    respecting the turning direction (cw or ccw).
+
     Args:
-        start_point: (x, y) starting point on circle
-        end_point: (x, y) ending point on circle
-        circle_center: (x, y) center of circle
-        radius: radius of the circle
-        turn_dir: 'cw' or 'ccw' turning direction
-    
+        start_point (tuple): The (x, y) starting point of the arc.
+        end_point (tuple): The (x, y) ending point of the arc.
+        circle_center (tuple): The (x, y) center of the turning circle.
+        circle_type (str): 'cw' for clockwise or 'ccw' for counter-clockwise.
+
     Returns:
-        Length of the arc
+        float: The angle of the arc in radians (always positive).
     """
-    s = np.array(start_point)
-    e = np.array(end_point)
-    c = np.array(circle_center)
-    
-    # Vectors from center to points
-    cs = s - c
-    ce = e - c
-    
-    # Calculate angle between vectors
-    cs_norm = cs / np.linalg.norm(cs)
-    ce_norm = ce / np.linalg.norm(ce)
-    dot = np.dot(cs_norm, ce_norm)
-    angle = np.arccos(np.clip(dot, -1.0, 1.0))
-    
-    # Determine if we need the major or minor arc
-    cross = np.cross([cs[0], cs[1], 0], [ce[0], ce[1], 0])[2]
-    if (turn_dir == 'cw' and cross > 0) or (turn_dir == 'ccw' and cross < 0):
-        angle = 2 * np.pi - angle
-    
-    # Arc length = radius * angle
+    # Create vectors from the center to the points on the circle
+    vec_start = np.array(start_point) - np.array(circle_center)
+    vec_end = np.array(end_point) - np.array(circle_center)
+
+    # Calculate the angle of each vector relative to the positive x-axis
+    angle_start = math.atan2(vec_start[1], vec_start[0])
+    angle_end = math.atan2(vec_end[1], vec_end[0])
+
+    # Calculate the difference in angles
+    angle_diff = angle_end - angle_start
+
+    if circle_type == 'ccw':
+        # For counter-clockwise, we want a positive angle.
+        # If the difference is negative, add 2*pi to go the long way around.
+        if angle_diff <= 0:
+            angle_diff += 2 * math.pi
+    elif circle_type == 'cw':
+        # For clockwise, we want a negative angle conceptually.
+        # If the difference is positive, subtract 2*pi.
+        if angle_diff >= 0:
+            angle_diff -= 2 * math.pi
+    else:
+        raise ValueError("circle_type must be 'cw' or 'ccw'")
+
+    # Arc length is based on the absolute value of the angle
+    return abs(angle_diff)
+
+def calculate_arc_length(start_point, end_point, circle_center, radius, circle_type):
+    """
+    Calculates the arc length using the robust angle calculation.
+    """
+    angle = calculate_arc_angle(start_point, end_point, circle_center, circle_type)
     return radius * angle
 
 def is_path_obstructed(start_pos, tangent_point, target_pos, circle_center, turn_dir, radius, obstacles, segments=8):
@@ -188,57 +201,58 @@ def approximate_arc(start_point, end_point, circle_center, radius, turn_dir, seg
     ce = e - c
     r = radius  # Using the provided radius
     
-    # Calculate angle between vectors
-    angle = calculate_arc_angle(cs, ce, turn_dir)
-    
-    # Generate points along the arc
+    # This is the key change: call the main helper with the correct arguments
+    total_angle = calculate_arc_angle(start_point, end_point, circle_center, turn_dir)
+
+    # Vectors from center to points
+    cs = np.array(start_point) - np.array(circle_center)
+
     points = [start_point]
     for i in range(1, segments):
         t = i / segments
-        current_angle = angle * t
-        
-        # Rotate the start vector
+        # Interpolate the angle
+        current_angle_offset = total_angle * t
+
         if turn_dir == 'cw':
-            current_angle = -current_angle
-        
-        # Rotation matrix
-        rot = np.array([
-            [np.cos(current_angle), -np.sin(current_angle)],
-            [np.sin(current_angle), np.cos(current_angle)]
-        ])
-        
-        # Apply rotation to cs
-        cs_norm = cs / np.linalg.norm(cs)
-        current_vec = np.dot(rot, cs_norm) * r
-        current_point = c + current_vec
-        
-        points.append(tuple(current_point))
-    
+            current_angle_offset = -current_angle_offset # Rotate clockwise
+
+        # Initial angle of the start vector
+        angle_start = math.atan2(cs[1], cs[0])
+
+        # New angle is the start angle plus the offset
+        new_angle = angle_start + current_angle_offset
+
+        # New point on the circle
+        new_x = circle_center[0] + radius * math.cos(new_angle)
+        new_y = circle_center[1] + radius * math.sin(new_angle)
+
+        points.append((new_x, new_y))
+
     points.append(end_point)
     return points
 
-def calculate_arc_angle(v1, v2, turn_dir):
-    """
-    Calculate angle between vectors for arc.
+# def calculate_arc_angle(v1, v2, turn_dir):
+#     """
+#     Calculate angle between vectors for arc.
     
-    Args:
-        v1: First vector [x, y]
-        v2: Second vector [x, y]
-        turn_dir: 'cw' or 'ccw' turning direction
+#     Args:
+#         v1: First vector [x, y]
+#         v2: Second vector [x, y]
+#         turn_dir: 'cw' or 'ccw' turning direction
         
-    Returns:
-        Angle in radians
-    """
-    v1_norm = v1 / np.linalg.norm(v1)
-    v2_norm = v2 / np.linalg.norm(v2)
+#     Returns:
+#         Angle in radians
+#     """
+#     v1_norm = v1 / np.linalg.norm(v1)
+#     v2_norm = v2 / np.linalg.norm(v2)
     
-    # Calculate dot product and angle
-    dot = np.dot(v1_norm, v2_norm)
-    angle = np.arccos(np.clip(dot, -1.0, 1.0))
+#     # Calculate dot product and angle
+#     dot = np.dot(v1_norm, v2_norm)
+#     angle = np.arccos(np.clip(dot, -1.0, 1.0))
     
-    # Determine major or minor arc
-    cross = np.cross([v1[0], v1[1], 0], [v2[0], v2[1], 0])[2]
-    if (turn_dir == 'cw' and cross > 0) or (turn_dir == 'ccw' and cross < 0):
-        angle = 2 * np.pi - angle
+#     # Determine major or minor arc
+#     cross = np.cross([v1[0], v1[1], 0], [v2[0], v2[1], 0])[2]
+#     if (turn_dir == 'cw' and cross > 0) or (turn_dir == 'ccw' and cross < 0):
+#         angle = 2 * np.pi - angle
     
-    return angle
+#     return angle
