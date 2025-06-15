@@ -27,6 +27,7 @@ class node(object):
         self.id = None
         # In the tree, each node has exactly one successor on the path to the goal
         self.successor = None
+        self.headings = None #input list of possible headings for the MILP to choose from
 
     def __repr__(self):
         # Format cost for readability
@@ -157,8 +158,6 @@ class MILPTrajectoryPlanner():
         
         return node_dict
 
-    
-
     def _find_connecting_segment(self, start_pos, target_node):
         """
         Finds the shortest, obstacle-free, kinodynamically feasible path
@@ -209,10 +208,6 @@ class MILPTrajectoryPlanner():
         # Return the path with the minimum total length
         return min(possible_paths, key=lambda x: x[0])
 
-
-    # Place this inside your MILPTrajectoryPlanner class
-
-    # Place this inside your MILPTrajectoryPlanner class
 
     def _is_kinodynamic_path_obstructed(self, start_pos, tangent_point, target_pos, circle_center, circle_type, segments=10):
         """
@@ -290,3 +285,37 @@ class MILPTrajectoryPlanner():
             if not is_inside_other:
                 valid_vertices.append(vertex_tuple)
         return valid_vertices
+    
+    def plan_and_execute_receding_horizon(self, start_state, goal_state, tree):
+        """
+        Implements Algorithm 3: Receding-Horizon-Planning to find the best path
+        from the start state to the goal state using the pre-built tree.
+        """
+        current_state = node(pos=start_state['pos'], vel=start_state['vel'])
+        #decision variables for the MILP: circle center binary - b_cw and b_ccw, heading (normalized velocity direction) - p_cw and pccw,\
+        #  radial vector of circle c (which must be perpendicular) to p - q_cw and q_ccw
+        #  decision variables for the MILP: circle center binary - b_cw and b_ccw, heading (normalized velocity direction) - p_cw and p_ccw,\
+        #  radial vector of circle c (which must be perpendicular) to p - q_cw and q_ccw
+        # self.b_cw = None
+        # self.b_ccw = None
+        # self.p_cw = None
+        # self.p_ccw = None
+        # self.q_cw = None
+        # self.q_ccw = None
+
+        # #set of circle centers
+        # self.circle_centers = set()
+        # #set of headings 
+        # self.headings = set()
+
+        # Initialize the MILP model gurobipy
+        import gurobipy as gp
+        self.model = gp.Model("MILP_Trajectory_Planner")
+        self.b_cw = self.model.addVars(len(tree), vtype=gp.GRB.BINARY, name="b_cw")
+        self.b_ccw = self.model.addVars(len(tree), vtype=gp.GRB.BINARY, name="b_ccw")
+        self.p_cw = self.model.addVars(len(self.headings), vtype=gp.GRB.BINARY, name="p_cw")
+        self.p_ccw = self.model.addVars(len(self.headings), vtype=gp.GRB.BINARY, name="p_ccw")
+        self.q_cw = self.model.addVars(len(tree), vtype=gp.GRB.CONTINUOUS, name="q_cw")
+        self.q_ccw = self.model.addVars(len(tree), vtype=gp.GRB.CONTINUOUS, name="q_ccw")
+        pass
+        
