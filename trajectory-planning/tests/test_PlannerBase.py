@@ -5,8 +5,11 @@ import numpy as np
 from shapely.geometry import Polygon
 
 sys.path.append('.')
-from main import TrajectoryDesign, is_path_blocked, get_obstacles, merge_intersecting_obstacles
+from src.utils.geometry import is_path_blocked
+from src.utils.obstacles import get_obstacles, merge_intersecting_obstacles
+from src.planners.base_planner import TrajectoryDesignBase as TrajectoryDesign
 
+@pytest.fixture(scope='module')
 
 #helper function to calculate distance between two points
 def distance(point1, point2):
