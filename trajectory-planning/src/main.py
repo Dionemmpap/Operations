@@ -33,7 +33,6 @@ def main():
             obstacles = map_data['obstacles']
             end_point = map_data['end_point']
             start_point = map_data['start_point']
-            use_hardcoded = False
             
             print(f"Loaded map: {map_data['name']}")
             print(f"Description: {map_data['description']}")
