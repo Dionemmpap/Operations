@@ -1,41 +1,12 @@
-""" Receding Horizon Control for Trajectory Design """
-import numpy as np
-import heapq
+# trajectory-planning/src/main.py
 import matplotlib.pyplot as plt
-import gurobipy as gp
-from gurobipy import GRB
-from shapely.geometry import Point, Polygon, MultiPolygon, LineString
-from planners.milp_planner import MILPTrajectoryPlanner
-from planners.base_planner import TrajectoryDesignBase
+
 from utils.visualization import visualize_map
 from utils.obstacles import get_obstacles
 from utils.map_loader import MapLoader
 from pathlib import Path  
 import json  
-
-#---------------------------------------------------------------
-# Main Function
-#---------------------------------------------------------------
-
-# def main():
-#     """Main function to run the trajectory planning demo."""
-#     # Setup environment
-#     map_boundary = [[0, 0], [10, 0], [10, 10], [0, 10]]
-#     obstacles = get_obstacles(map_boundary, 4)
-#     end_point = [9.9, 9.9]
-#     start_point = [0.1, 0.1]
-    
-#     # Visualize the environment
-#     visualize_map(map_boundary, obstacles, {}, end_point)
-    
-#     # Initialize the MILP trajectory planner
-#     planner = MILPTrajectoryPlanner(map_boundary, obstacles, end_point, start_point, tau=0.2)
-#     planner.plan_trajectory(horizon=5, max_iterations=20)
-    
-#     # Visualize results
-#     planner.plot(plt_traj=True)
-#     planner.visualize_dynamics()
-
+from planners.planner_chapter2 import RecedingHorizonController
 
 
 def main():
@@ -73,10 +44,10 @@ def main():
 
     
     visualize_map(map_boundary=map_boundary, obstacles=obstacles, graph={}, end_point=end_point)
-    # Initialize the base trajectory planner
-    planner = TrajectoryDesignBase(map_boundary, obstacles, end_point, start_point, tau=0.1)
-    planner.receding_horizon()
-    planner.plot(plt_traj=True)
+
+    controller = RecedingHorizonController(map_boundary, obstacles, start_point, end_point,tau=0.5)
+    controller.plan_and_execute()
+    controller.plot_results()
 
 
 if __name__ == "__main__":

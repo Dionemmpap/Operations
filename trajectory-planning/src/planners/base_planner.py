@@ -17,10 +17,12 @@ class TrajectoryDesignBase():
         self.tau = tau
         self.graph, self.points = self.build_graph()
         self.distances = self.dijkstra()
+        self.N = 10  # planning horizon
+        self.Ne = 1  # execution steps per iteration
+        self.umax = 1.0  # maximum step size
 
-    
     def build_graph(self):
-        """Creates a dictionary of points and their distances to other points to which the path is not blocked."""	
+        """Creates a dictionary of points and their distances to other points to which the path is not blocked."""          
         points = []
         for obstacle in self.obstacles:
             for point in obstacle:
@@ -28,12 +30,13 @@ class TrajectoryDesignBase():
                 if not is_point_on_boundary(point, self.map_boundary):
                     points.append(point)
         
-        # Always include the end point
-        if not is_point_on_boundary(self.end_point, self.map_boundary):
-            points.append(self.end_point)
-        else:
-            # If end point is on boundary, we still need it
-            points.append(self.end_point)
+        # # Always include the end point
+        # if not is_point_on_boundary(self.end_point, self.map_boundary):
+        #     points.append(self.end_point)
+        # else:
+        #     # If end point is on boundary, we still need it
+        #     points.append(self.end_point)
+        points.append(self.end_point)
 
         graph = {}
         for i, point1 in enumerate(points):
@@ -42,6 +45,11 @@ class TrajectoryDesignBase():
                 if i != j and not is_path_blocked(point1, point2, self.obstacles):
                     dist = np.linalg.norm(np.array(point1) - np.array(point2))
                     graph[tuple(point1)][tuple(point2)] = dist
+        for point in points:
+            if not is_path_blocked(point, self.end_point, self.obstacles):
+                dist = np.linalg.norm(np.array(point) - np.array(self.end_point))
+                graph[tuple(point)][tuple(self.end_point)] = dist
+                graph[tuple(self.end_point)][tuple(point)] = dist
 
         return graph, points
 
@@ -70,48 +78,133 @@ class TrajectoryDesignBase():
     def receding_horizon(self):
         current_position = self.start_point
         self.trajectory = []
+        self.trajectory.append(current_position)  # Add starting point to trajectory
+        
+        # Add step counter to prevent infinite loops
+        max_steps = 500
+        step_counter = 0
+        
         while not np.allclose(current_position, self.end_point, atol=1e-1):
             # Plan a trajectory from the current position to the endpoint
             next_position = self.plan_trajectory(current_position)
             print(f"Moving from {current_position} to {next_position}")
-            #store the trajectory
+            
+            # Store the trajectory
             self.trajectory.append(next_position)
 
             # Move to the next position
             current_position = next_position
-
-            #Uncomment to see trajectory progress per iteration
+            
+            # Increment step counter and check for maximum steps
+            step_counter += 1
+            if step_counter > max_steps:
+                print("Aborting: maximum steps reached.")
+                break
+                
+            # Uncomment to see trajectory progress per iteration
             # self.plot(plt_traj=True)
 
     def plan_trajectory(self, current_position):
-        """Plan a trajectory from the current position to the endpoint."""
-        # Find visible nodes from the current position
-        visible_nodes = []
-        for node in self.points:
-            if not is_path_blocked(current_position, node, self.obstacles):
-                visible_nodes.append(node)
+        N = self.N
+        tau = self.tau
 
-        # Solve optimization problem to find the best node
-        objective = gp.Model()
-        objective.setParam('OutputFlag', 0)
-        x = objective.addVars(len(visible_nodes), vtype=GRB.BINARY, name='x')
-        objective.setObjective(
-            sum(
-                x[j] * (
-                    np.linalg.norm(np.array(current_position) - np.array(visible_nodes[j]))
-                    + self.distances[tuple(visible_nodes[j])]
-                ) for j in range(len(visible_nodes))
-            ), GRB.MINIMIZE
-        )
-        objective.addConstr(sum(x[j] for j in range(len(visible_nodes))) == 1)
-        objective.optimize()
+        model = gp.Model()
+        model.setParam('OutputFlag', 0)
 
-        # Calculate the proposed next position
-        direction = np.array(visible_nodes[np.argmax([x[j].x for j in range(len(visible_nodes))])]) - np.array(current_position)
-        direction = direction / np.linalg.norm(direction)  # Normalize the direction vector
-        point = np.array(current_position) + self.tau * direction
+        # Variables for positions and control inputs
+        x = model.addVars(N+1, 2, lb=-GRB.INFINITY, name='x')  # Positions x[0] to x[N]
+        u = model.addVars(N, 2, lb=-self.umax, ub=self.umax, name='u')  # Inputs u[0] to u[N-1]
 
-        return point
+        # Initial condition
+        model.addConstrs(x[0, i] == current_position[i] for i in range(2))
+
+        # Dynamics
+        for t in range(N):
+            for i in range(2):
+                model.addConstr(x[t+1, i] == x[t, i] + tau * u[t, i])
+
+        # Basic obstacle avoidance for all x[t]
+        for t in range(N+1):
+            for obs in self.obstacles:
+                xmin, xmax = np.min([p[0] for p in obs]), np.max([p[0] for p in obs])
+                ymin, ymax = np.min([p[1] for p in obs]), np.max([p[1] for p in obs])
+                b = model.addVars(4, vtype=GRB.BINARY)
+                M = 1000
+                model.addConstr(x[t, 0] <= xmin - 1e-2 + M * b[0])
+                model.addConstr(x[t, 0] >= xmax + 1e-2 - M * b[1])
+                model.addConstr(x[t, 1] <= ymin - 1e-2 + M * b[2])
+                model.addConstr(x[t, 1] >= ymax + 1e-2 - M * b[3])
+                model.addConstr(gp.quicksum(b[i] for i in range(4)) <= 3)
+
+        # First solve: no terminal penalty yet
+        model.setObjective(gp.quicksum(u[t, 0]*u[t, 0] + u[t, 1]*u[t, 1] for t in range(N)), GRB.MINIMIZE)
+        model.optimize()
+
+        # Get terminal point after first solve
+        xN = (x[N, 0].X, x[N, 1].X)
+
+        # Get visible cost nodes
+        vis_nodes = [node for node in self.distances.keys()
+                    if not is_path_blocked(xN, node, self.obstacles)]
+        if not vis_nodes:
+            print("No visible nodes from terminal point — fallback triggered.")
+            return np.array(xN)
+
+        # Add visibility selection binary
+        b_vis = model.addVars(len(vis_nodes), vtype=GRB.BINARY, name='b_vis')
+        model.addConstr(gp.quicksum(b_vis[j] for j in range(len(vis_nodes))) == 1)
+
+        # Define x_vis and c_vis
+        x_vis = model.addVars(2, name='x_vis')
+        for i in range(2):
+            model.addConstr(x_vis[i] == gp.quicksum(b_vis[j] * vis_nodes[j][i] for j in range(len(vis_nodes))))
+        c_vis = model.addVar(name='c_vis')
+        model.addConstr(c_vis == gp.quicksum(b_vis[j] * self.distances[tuple(vis_nodes[j])] for j in range(len(vis_nodes))))
+
+        # Add visibility constraints between x[N] and x_vis
+        T_interp = np.linspace(0.05, 0.95, 15)
+        for t_frac in T_interp:
+            x_interp = model.addVars(2, name=f'interp_{t_frac:.2f}')
+            for i in range(2):
+                model.addConstr(x_interp[i] == x[N, i] + t_frac * (x_vis[i] - x[N, i]))
+            for obs in self.obstacles:
+                xmin, xmax = np.min([p[0] for p in obs]), np.max([p[0] for p in obs])
+                ymin, ymax = np.min([p[1] for p in obs]), np.max([p[1] for p in obs])
+                b = model.addVars(4, vtype=GRB.BINARY)
+                M = 1000
+                model.addConstr(x_interp[0] <= xmin - 1e-2 + M * b[0])
+                model.addConstr(x_interp[0] >= xmax + 1e-2 - M * b[1])
+                model.addConstr(x_interp[1] <= ymin - 1e-2 + M * b[2])
+                model.addConstr(x_interp[1] >= ymax + 1e-2 - M * b[3])
+                model.addConstr(gp.quicksum(b[i] for i in range(4)) <= 3)
+
+        # Define L1 norm distance from x[N] to x_vis
+        diff = model.addVars(2, name='diff')
+        abs_diff = model.addVars(2, name='abs_diff')
+        for i in range(2):
+            model.addConstr(diff[i] == x_vis[i] - x[N, i])
+            model.addGenConstrAbs(abs_diff[i], diff[i])
+
+        # Set objective: L1(x[N] to x_vis) + c_vis
+        model.setObjective(gp.quicksum(abs_diff[i] for i in range(2)) + c_vis, GRB.MINIMIZE)
+
+        # Re-solve with terminal cost
+        model.optimize()
+        print(f"  x[N]    = {xN}")
+        chosen_index = [j for j in range(len(vis_nodes)) if b_vis[j].X > 0.5][0]
+        print(f"  x_vis   = {vis_nodes[chosen_index]}")
+        print(f"  cost-to-go = {self.distances[tuple(vis_nodes[chosen_index])]:.2f}")
+        
+
+        if model.status != GRB.OPTIMAL:
+            print("Warning: MILP model not optimal.")
+            return np.array(xN)
+
+        # Return the next point
+        next_point = np.array([x[self.Ne, 0].X, x[self.Ne, 1].X])
+        print(f"  step size: {np.linalg.norm(next_point - current_position):.3f}")
+        return next_point
+
 
 
 
