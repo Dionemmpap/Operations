@@ -58,7 +58,7 @@ class MapLoader:
             # List all maps and find by name
             maps = self.list_available_maps()
             for map_info in maps:
-                if map_info['name'].lower() == map_name.lower():
+                if map_info['name'].lower() == map_name.removesuffix('.json').lower():
                     map_path = self.maps_dir / map_info['filename']
                     break
         
