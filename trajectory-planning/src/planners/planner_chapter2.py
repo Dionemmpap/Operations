@@ -206,10 +206,10 @@ class RecedingHorizonController:
 
         # Add constraints to keep all points within the map boundaries
         for t in range(1, self.N + 1):
-            model.addConstr(x[t, 0] >= map_xmin + 0.1)  # Small margin for safety
-            model.addConstr(x[t, 0] <= map_xmax - 0.1)
-            model.addConstr(x[t, 1] >= map_ymin + 0.1)
-            model.addConstr(x[t, 1] <= map_ymax - 0.1)
+            model.addConstr(x[t, 0] >= map_xmin + self.BOUNDARY_MARGIN)  # Small margin for safety
+            model.addConstr(x[t, 0] <= map_xmax - self.BOUNDARY_MARGIN)
+            model.addConstr(x[t, 1] >= map_ymin + self.BOUNDARY_MARGIN)
+            model.addConstr(x[t, 1] <= map_ymax - self.BOUNDARY_MARGIN)
 
         # --- Terminal Cost-to-go with Interpolated Visibility ---
         vis_nodes = self.points  # All graph nodes are possible x_vis
