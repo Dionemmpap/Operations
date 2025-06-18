@@ -229,8 +229,8 @@ class PlannerVisualizer:
         
         # Update display
         pygame.display.flip()
-        # Small delay to ensure visualization updates
-        time.sleep(0.05)
+        # Control frame rate
+        self.clock.tick(20)  # Limit to 20 frames per second
         return True
         
     def close(self):
