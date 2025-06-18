@@ -5,12 +5,13 @@ import matplotlib.pyplot as plt
 import heapq
 from utils.obstacles import merge_intersecting_obstacles, get_obstacles
 from utils.geometry import is_path_blocked, is_point_on_boundary
+from utils.visualization import PlannerVisualizer  # Import the visualizer
 
 class RecedingHorizonController:
     """
     Implements the receding horizon control for trajectory design as described in the paper.
     """
-    def __init__(self, map_boundary, obstacles, start_point, end_point, N=30, Ne=3, tau=0.2, umax=1.0):
+    def __init__(self, map_boundary, obstacles, start_point, end_point, N=30, Ne=3, tau=0.2, umax=1.0, use_visualizer=True):
         self.map_boundary = map_boundary
         # self.obstacles = merge_intersecting_obstacles(obstacles)
         self.obstacles = obstacles
@@ -26,7 +27,16 @@ class RecedingHorizonController:
         self.cost_to_go = self._dijkstra()
         
         self.trajectory = [self.start_point]
-
+        
+        # Initialize visualizer if requested
+        self.use_visualizer = use_visualizer
+        if self.use_visualizer:
+            self.visualizer = PlannerVisualizer(width=800, height=800)
+            # Calculate bounds to ensure everything is visible
+            self.visualizer.set_world_bounds(self.obstacles, self.start_point, self.end_point)
+            # Add initial visualization frame
+            self._update_visualization(self.start_point, [self.start_point], None)
+            
     def _build_visibility_graph(self):
         """
         Builds a graph of all obstacle vertices and the start/end points.
@@ -80,6 +90,9 @@ class RecedingHorizonController:
             if np.linalg.norm(current_pos - self.end_point) < 2:
                 print("Goal reached!")
                 self.trajectory.append(self.end_point)
+                # Final visualization update
+                if self.use_visualizer:
+                    self._update_visualization(current_pos, self.trajectory[-50:], None)
                 break
 
             planned_path = self._solve_milp(current_pos)
@@ -87,14 +100,50 @@ class RecedingHorizonController:
                 print("Failed to find a path.")
                 break
 
+            # Update visualization with the planned path
+            if self.use_visualizer:
+                # Estimate a heading based on the trajectory direction
+                heading = 0
+                if len(self.trajectory) > 1:
+                    direction = self.trajectory[-1] - self.trajectory[-2]
+                    heading = np.arctan2(direction[1], direction[0])
+                
+                self._update_visualization(current_pos, self.trajectory[-50:], planned_path, heading)
+
             # Execute the first Ne steps
             next_pos = planned_path[self.Ne]
             self.trajectory.extend(planned_path[1:self.Ne + 1])
             current_pos = next_pos
             print(f"Step {step+1}: Moved to {np.round(current_pos,2)}")
 
-        if step == max_steps -1:
+        if step == max_steps - 1:
             print("Max steps reached, terminating.")
+            
+        # Close the visualizer when done
+        if self.use_visualizer:
+            self.visualizer.close()
+
+    def _update_visualization(self, current_pos, actual_trajectory, predicted_trajectory, heading=0):
+        """Update the visualization with current state"""
+        vehicle_pos = (current_pos[0], current_pos[1], heading)
+        
+        # Convert trajectory arrays to list of tuples for visualizer
+        actual_traj_viz = [(pos[0], pos[1]) for pos in actual_trajectory]
+        pred_traj_viz = None
+        if predicted_trajectory is not None:
+            pred_traj_viz = [(pos[0], pos[1]) for pos in predicted_trajectory]
+        
+        # For visualization: use polygon (square) obstacles directly
+        viz_obstacles = self.obstacles.copy()  # Use actual polygon obstacles
+        
+        # Add endpoint as a special obstacle for visualization
+        viz_obstacles.append((self.end_point[0], self.end_point[1], 1, (0, 255, 0)))  # Green target
+        
+        # Debug print
+        print(f"Vehicle at {current_pos}, drawing {len(viz_obstacles)} obstacles")
+        
+        # Update the visualization
+        self.visualizer.update(vehicle_pos, viz_obstacles, actual_traj_viz, pred_traj_viz)
 
     def _solve_milp(self, start_pos):
         """
