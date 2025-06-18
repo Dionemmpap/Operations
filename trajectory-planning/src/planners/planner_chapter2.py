@@ -27,6 +27,7 @@ class RecedingHorizonController:
         self.cost_to_go = self._dijkstra()
         
         self.trajectory = [self.start_point]
+        self.distance_covered = 0.0  # Track total distance covered
         
         # Initialize visualizer if requested
         self.use_visualizer = use_visualizer
@@ -112,9 +113,14 @@ class RecedingHorizonController:
 
             # Execute the first Ne steps
             next_pos = planned_path[self.Ne]
+            
+            # Update distance covered
+            segment_distance = np.linalg.norm(next_pos - current_pos)
+            self.distance_covered += segment_distance
+            
             self.trajectory.extend(planned_path[1:self.Ne + 1])
             current_pos = next_pos
-            print(f"Step {step+1}: Moved to {np.round(current_pos,2)}")
+            print(f"Step {step+1}: Moved to {np.round(current_pos,2)}, Distance covered: {self.distance_covered:.2f}")
 
         if step == max_steps - 1:
             print("Max steps reached, terminating.")
@@ -139,11 +145,21 @@ class RecedingHorizonController:
         # Add endpoint as a special obstacle for visualization
         viz_obstacles.append((self.end_point[0], self.end_point[1], 1, (0, 255, 0)))  # Green target
         
+        # Create debug info dictionary
+        distance_to_goal = np.linalg.norm(current_pos - self.end_point)
+        debug_info = {
+            "Distance covered": f"{self.distance_covered:.2f}",
+            "Distance to goal": f"{distance_to_goal:.2f}",
+            "Steps taken": f"{len(self.trajectory) - 1}",
+            "Position": f"({current_pos[0]:.2f}, {current_pos[1]:.2f})"
+        }
+        
         # Debug print
-        print(f"Vehicle at {current_pos}, drawing {len(viz_obstacles)} obstacles")
+        print(f"Vehicle at {current_pos}, distance to goal: {distance_to_goal:.2f}, total distance: {self.distance_covered:.2f}")
         
         # Update the visualization
-        self.visualizer.update(vehicle_pos, viz_obstacles, actual_traj_viz, pred_traj_viz)
+        self.visualizer.update(vehicle_pos, viz_obstacles, actual_traj_viz, pred_traj_viz, 
+                               map_boundary=self.map_boundary, debug_info=debug_info)
 
     def _solve_milp(self, start_pos):
         """
@@ -181,6 +197,19 @@ class RecedingHorizonController:
                 model.addConstr(x[t, 1] <= ymin - 1e-2 + M * b[2])
                 model.addConstr(x[t, 1] >= ymax + 1e-2 - M * b[3])
                 model.addConstr(gp.quicksum(b) <= 3)
+
+        # --- Map Boundary Constraints ---
+        # Find the bounding box of the map boundary
+        boundary_points = np.array(self.map_boundary)
+        map_xmin, map_ymin = np.min(boundary_points, axis=0)
+        map_xmax, map_ymax = np.max(boundary_points, axis=0)
+
+        # Add constraints to keep all points within the map boundaries
+        for t in range(1, self.N + 1):
+            model.addConstr(x[t, 0] >= map_xmin + 0.1)  # Small margin for safety
+            model.addConstr(x[t, 0] <= map_xmax - 0.1)
+            model.addConstr(x[t, 1] >= map_ymin + 0.1)
+            model.addConstr(x[t, 1] <= map_ymax - 0.1)
 
         # --- Terminal Cost-to-go with Interpolated Visibility ---
         vis_nodes = self.points  # All graph nodes are possible x_vis
@@ -240,9 +269,10 @@ class RecedingHorizonController:
         Visualizes the final trajectory, obstacles, and map boundaries.
         """
         fig, ax = plt.subplots(figsize=(10,10))
+        
         # Plot boundaries
-        # bx, by = zip(*self.map_boundary + [self.map_boundary[0]])
-        # ax.plot(bx, by, 'k-')
+        boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
+        ax.plot(boundary_x, boundary_y, 'k-', linewidth=2, label='Map Boundary')
 
         # Plot obstacles
         for obs in self.obstacles:
@@ -261,4 +291,5 @@ class RecedingHorizonController:
         ax.set_aspect('equal', 'box')
         ax.legend()
         plt.grid(True)
+        plt.title("Final Planned Trajectory")
         plt.show()

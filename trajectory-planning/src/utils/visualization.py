@@ -32,7 +32,7 @@ def visualize_map(map_boundary, obstacles, graph, end_point):
     plt.show()
 
 class PlannerVisualizer:
-    def __init__(self, width=800, height=600, scale=10, background_color=(255, 255, 255)):
+    def __init__(self, width=800, height=600, scale=25, background_color=(255, 255, 255)):
         """
         Initialize the pygame visualizer for a receding horizon planner.
         
@@ -175,7 +175,7 @@ class PlannerVisualizer:
         for point in screen_points:
             pygame.draw.circle(self.screen, color, point, 2)
         
-    def update(self, vehicle_pos, obstacles, actual_trajectory=None, predicted_trajectory=None):
+    def update(self, vehicle_pos, obstacles, actual_trajectory=None, predicted_trajectory=None, map_boundary=None, debug_info=None):
         """
         Update the visualization with new data
         
@@ -184,6 +184,8 @@ class PlannerVisualizer:
             obstacles: List of obstacles (either circles or polygons)
             actual_trajectory: List of (x, y) points showing past trajectory
             predicted_trajectory: List of (x, y) points showing predicted future trajectory
+            map_boundary: List of (x, y) points defining the map boundary
+            debug_info: Dictionary of debug information to display
         """
         # Handle events
         for event in pygame.event.get():
@@ -195,6 +197,10 @@ class PlannerVisualizer:
                 
         # Clear screen
         self.screen.fill(self.background_color)
+        
+        # Draw map boundary if provided
+        if map_boundary:
+            self.draw_boundary(map_boundary)
         
         # Draw obstacles
         for obs in obstacles:
@@ -211,6 +217,16 @@ class PlannerVisualizer:
         self.draw_vehicle(vehicle_pos[0], vehicle_pos[1], 
                          vehicle_pos[2] if len(vehicle_pos) > 2 else 0)
         
+        # Display debug information
+        if debug_info:
+            font = pygame.font.SysFont('Arial', 16)
+            y_offset = 10
+            for key, value in debug_info.items():
+                text = f"{key}: {value}"
+                text_surface = font.render(text, True, (0, 0, 0))
+                self.screen.blit(text_surface, (10, y_offset))
+                y_offset += 20
+        
         # Update display
         pygame.display.flip()
         # Small delay to ensure visualization updates
@@ -220,6 +236,14 @@ class PlannerVisualizer:
     def close(self):
         """Close the visualization window"""
         pygame.quit()
+
+    def draw_boundary(self, boundary, color=(100, 100, 100), width=2):
+        """Draw the map boundary as a polygon"""
+        if not boundary or len(boundary) < 3:
+            return
+            
+        screen_points = [self.world_to_screen(p[0], p[1]) for p in boundary]
+        pygame.draw.polygon(self.screen, color, screen_points, width)
 
 
 # Example usage:
