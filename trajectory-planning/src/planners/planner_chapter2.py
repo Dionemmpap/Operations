@@ -21,6 +21,7 @@ class RecedingHorizonController:
         self.Ne = Ne  # Execution horizon
         self.tau = tau  # Time step
         self.umax = umax  # Max control input
+        self.BOUNDARY_MARGIN = 0.1  # Margin for boundary constraints
 
         # Build visibility graph and compute shortest paths with Dijkstra's
         self.graph, self.points = self._build_visibility_graph()

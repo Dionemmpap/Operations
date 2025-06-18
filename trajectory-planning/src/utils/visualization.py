@@ -50,6 +50,7 @@ class PlannerVisualizer:
         self.screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption("Receding Horizon Planner Visualization")
         self.running = True
+        self.clock = pygame.time.Clock()  # Initialize the clock
         
         # We'll calculate these dynamically
         self.center_x = 0
