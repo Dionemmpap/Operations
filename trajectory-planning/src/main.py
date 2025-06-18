@@ -44,7 +44,7 @@ def main():
     
     visualize_map(map_boundary=map_boundary, obstacles=obstacles, graph={}, end_point=end_point)
 
-    controller = RecedingHorizonController(map_boundary, obstacles, start_point, end_point,tau=0.5)
+    controller = RecedingHorizonController(map_boundary, obstacles, start_point, end_point,tau=0.5,N=15, Ne=6)
     controller.plan_and_execute()
     controller.plot_results()
 
