@@ -29,6 +29,8 @@ class RecedingHorizonController:
         self.arrival_time = None
         self.milp_times = []
         self.total_computation_time = 0.0
+        self.distance_history = []
+
 
 
         # Build visibility graph and compute shortest paths with Dijkstra's
@@ -37,6 +39,8 @@ class RecedingHorizonController:
         
         self.trajectory = [self.start_point]
         self.distance_covered = 0.0  # Track total distance covered
+        self.distance_history.append(self.distance_covered)
+
         
         # Initialize visualizer if requested
         self.use_visualizer = use_visualizer
