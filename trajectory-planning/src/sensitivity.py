@@ -8,7 +8,7 @@ import pandas as pd
 from planners.planner_chapter2 import RecedingHorizonController
 
 # Select variable to test and fixed values
-VARY = "N"  # Choose from: "N", "Ne", "tau", "umax"
+VARY = "tau"  # Choose from: "N", "Ne", "tau", "umax"
 
 param_options = {
     "N": [12, 18, 24, 30, 36],
@@ -101,21 +101,33 @@ def run_experiments(vary_key, vary_values, fixed_params, map_path):
 
     return pd.DataFrame(results)
 
+
 def main():
     vary_key = VARY
     vary_values = param_options[vary_key]
-    maps_dir = Path(__file__).parent.parent / 'maps'
-    map_path = maps_dir / 'scenarios' / 'sensitivity analysis' / 'baseline_map_sa.json'
 
-    df = run_experiments(vary_key, vary_values, fixed_params, map_path)
+    # List of map filenames and their labels
+    map_names = ["easy_map_sa", "baseline_map_sa", "hard_map_sa"]
+    maps_dir = Path(__file__).parent.parent / 'maps' / 'scenarios'/ 'sensitivity analysis'
 
-    # Create the output directory if it doesn't exist
+    all_results = []
+
+    for map_name in map_names:
+        map_path = maps_dir / f"{map_name}.json"
+        df = run_experiments(vary_key, vary_values, fixed_params, map_path)
+        df["map"] = map_name  # Add a new column to identify the map
+        all_results.append(df)
+
+    # Concatenate and save
+    combined_df = pd.concat(all_results, ignore_index=True)
+
     results_dir = Path(__file__).parent / "Sensitivity results"
     results_dir.mkdir(parents=True, exist_ok=True)
+    out_path = results_dir / f"sensitivity_{vary_key}_with_maps.csv"
+    combined_df.to_csv(out_path, index=False)
 
-    out_path = results_dir / f'sensitivity_{vary_key}.csv'
-    df.to_csv(out_path, index=False)
-    print(f"Saved to {out_path}")
+    print(f"Saved combined results to {out_path}")
+
 
 
 if __name__ == "__main__":
