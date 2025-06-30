@@ -269,7 +269,7 @@ class RecedingHorizonController:
         """
         Visualizes the final trajectory, obstacles, and map boundaries.
         """
-        fig, ax = plt.subplots(figsize=(10,10))
+        fig, ax = plt.subplots(figsize=(12, 10))
         
         # Plot boundaries
         boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
@@ -290,7 +290,14 @@ class RecedingHorizonController:
             ax.plot(traj_x, traj_y, 'b-o', markersize=4, label="Planned Trajectory")
 
         ax.set_aspect('equal', 'box')
-        ax.legend()
+        
+        # Move legend outside the plot
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        
+        # Adjust layout to make room for the legend
+        plt.tight_layout()
+        plt.subplots_adjust(right=0.8)  # Make room for legend on the right
+        
         plt.grid(True)
         plt.title("Final Planned Trajectory")
         plt.show()

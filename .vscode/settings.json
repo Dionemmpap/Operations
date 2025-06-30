@@ -1,6 +1,6 @@
 {
     "python.testing.pytestArgs": [
-        "trajectory-planning/tests"
+        "trajectory-planning"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true
