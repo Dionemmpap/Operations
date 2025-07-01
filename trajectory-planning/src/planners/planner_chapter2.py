@@ -272,7 +272,6 @@ class RecedingHorizonController:
         model.setObjective(dist_sq + c_vis + effort*0.01, GRB.MINIMIZE)
 
         # --- Solve the Model ---
-        model.optimize()
 
         start_time = time.time()
         model.optimize()

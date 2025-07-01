@@ -1,10 +1,8 @@
 # trajectory-planning/src/main.py
 import matplotlib.pyplot as plt
 from utils.visualization import visualize_map
-from utils.obstacles import get_obstacles
 from utils.map_loader import MapLoader
 from pathlib import Path  
-import json  
 from planners.planner_chapter2 import RecedingHorizonController
 
 

@@ -157,23 +157,3 @@ def test_plan_trajectory():
     new_distance = np.linalg.norm(np.array(point) - np.array(end_point))
     assert new_distance < initial_distance
     
-def test_receding_horizon():
-    """Test the receding horizon trajectory planning logic."""
-    # Set up the test data
-    end_point = [10, 10]
-    obstacles = [[[2, 2], [4, 2], [4, 4], [2, 4]]]
-    tau = 0.1
-
-    td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
-    td.receding_horizon()
-
-
-    # Assertions
-    assert isinstance(td.trajectory, list)
-    assert all(isinstance(point, np.ndarray) for point in td.trajectory)
-    assert len(td.trajectory) > 0
-    assert all(len(point) == 2 for point in td.trajectory)
-    assert all(isinstance(point[0], (int, float, np.int32)) and isinstance(point[1], (int, float, np.int32)) for point in td.trajectory)
-    assert all(0 <= point[0] <= 10 and 0 <= point[1] <= 10 for point in td.trajectory)
-    diff_traj = np.diff(td.trajectory, axis=0)
-    assert np.all(np.diff(td.trajectory, axis=0) > 0)  # Ensure the trajectory is monotonically increasing

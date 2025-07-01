@@ -1,5 +1,5 @@
 {
-  "name": "Simple Basic Map (Scaled)",
+  "name": "Simple Basic Map",
   "description": "Basic map with a single obstacle",
   "map_boundary": [[0, 0], [0, 9], [15, 9], [15, 0]],
   "start_point": [0.3, 1.5],
