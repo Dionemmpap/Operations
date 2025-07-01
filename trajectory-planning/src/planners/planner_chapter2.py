@@ -52,23 +52,21 @@ class RecedingHorizonController:
             self._update_visualization(self.start_point, [self.start_point], None)
             
     def _build_visibility_graph(self):
-        """
-        Builds a graph of all obstacle vertices and the start/end points.
-        Edges exist only if the path between two points is clear of obstacles.
-        """
         points = [self.end_point]
         for obs in self.obstacles:
             points.extend(obs)
         
-        # Using a tuple for dictionary keys
         graph = {tuple(p): {} for p in points}
 
-        for i, p1 in enumerate(points):
-            for j, p2 in enumerate(points):
+        for i, p1_tuple in enumerate(points):
+            for j, p2_tuple in enumerate(points):
                 if i >= j: continue
-                dist = np.linalg.norm(np.array(p1) - np.array(p2))
-                graph[tuple(p1)][tuple(p2)] = dist
-                graph[tuple(p2)][tuple(p1)] = dist
+                if not is_path_blocked(p1_tuple, p2_tuple, self.obstacles):
+                    p1 = np.array(p1_tuple)
+                    p2 = np.array(p2_tuple)
+                    dist = np.linalg.norm(p1 - p2)
+                    graph[tuple(p1)][tuple(p2)] = dist
+                    graph[tuple(p2)][tuple(p1)] = dist
         
         return graph, [np.array(p) for p in points]
 
@@ -230,7 +228,18 @@ class RecedingHorizonController:
             model.addConstr(x[t, 1] <= map_ymax - self.BOUNDARY_MARGIN)
 
         # --- Terminal Cost-to-go with Interpolated Visibility ---
-        vis_nodes = self.points  # All graph nodes are possible x_vis
+        # Filter out nodes with infinite cost-to-go
+        valid_nodes = []
+        for point in self.points:
+            point_tuple = tuple(point)
+            if point_tuple in self.cost_to_go and self.cost_to_go[point_tuple] != float('inf'):
+                valid_nodes.append(point)
+        
+        # If no valid nodes, use just the end point
+        if not valid_nodes:
+            valid_nodes = [self.end_point]
+        
+        vis_nodes = valid_nodes  # Use only nodes with finite cost-to-go
         
         b_vis = model.addVars(len(vis_nodes), vtype=GRB.BINARY, name='b_vis')
         model.addConstr(gp.quicksum(b_vis[j] for j in range(len(vis_nodes))) == 1)
@@ -243,7 +252,7 @@ class RecedingHorizonController:
         c_vis = model.addVar(name='c_vis')
         model.addConstr(c_vis == gp.quicksum(b_vis[j] * self.cost_to_go[tuple(vis_nodes[j])]
                                             for j in range(len(vis_nodes))))
-
+    
         # Interpolated visibility constraints between x[N] and x_vis
         T_interp = np.linspace(0.05, 0.95, 10)
         M = 1000
@@ -301,7 +310,7 @@ class RecedingHorizonController:
         
         # Plot boundaries
         boundary_x, boundary_y = zip(*self.map_boundary + [self.map_boundary[0]])
-        ax.plot(boundary_x, boundary_y, 'k-', linewidth=2, label='Map Boundary')
+        ax.plot(boundary_x, boundary_y, 'k-', linewidth=2)
 
         # Plot obstacles
         for obs in self.obstacles:
@@ -309,22 +318,20 @@ class RecedingHorizonController:
             ax.fill(ox, oy, 'gray', edgecolor='black')
 
         # Plot start and end points
-        ax.plot(self.start_point[0], self.start_point[1], 'go', markersize=10, label="Start")
-        ax.plot(self.end_point[0], self.end_point[1], 'ro', markersize=10, label="End")
+        ax.plot(self.start_point[0], self.start_point[1], 'go', markersize=10)
+        ax.plot(self.end_point[0], self.end_point[1], 'ro', markersize=10)
         
         # Plot trajectory
         if self.trajectory:
             traj_x, traj_y = zip(*self.trajectory)
-            ax.plot(traj_x, traj_y, 'b-o', markersize=4, label="Planned Trajectory")
+            ax.plot(traj_x, traj_y, 'b-o', markersize=4)
 
         ax.set_aspect('equal', 'box')
         
-        # Move legend outside the plot
-        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        # No legend call here
         
-        # Adjust layout to make room for the legend
+        # Use regular tight_layout without extra space for legend
         plt.tight_layout()
-        plt.subplots_adjust(right=0.8)  # Make room for legend on the right
         
         plt.grid(True)
         plt.title("Final Planned Trajectory")
