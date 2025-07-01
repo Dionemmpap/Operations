@@ -106,7 +106,7 @@ def main():
     vary_key = VARY
     vary_values = param_options[vary_key]
 
-    # List of map filenames and their labels
+    # Maps
     map_names = ["easy_map_sa", "baseline_map_sa", "hard_map_sa"]
     maps_dir = Path(__file__).parent.parent / 'maps' / 'scenarios'/ 'sensitivity analysis'
 
@@ -115,10 +115,10 @@ def main():
     for map_name in map_names:
         map_path = maps_dir / f"{map_name}.json"
         df = run_experiments(vary_key, vary_values, fixed_params, map_path)
-        df["map"] = map_name  # Add a new column to identify the map
+        df["map"] = map_name 
         all_results.append(df)
 
-    # Concatenate and save
+    # Save results
     combined_df = pd.concat(all_results, ignore_index=True)
 
     results_dir = Path(__file__).parent / "Sensitivity results"
@@ -128,8 +128,84 @@ def main():
 
     print(f"Saved combined results to {out_path}")
 
+## Test for map with concavities (tau = 0.75 needed)
+def run_single_test_on_new_map():
+    map_name = "complex_map"
+    maps_dir = Path(__file__).parent.parent / 'maps' / 'scenarios' / 'sensitivity analysis'
+    map_path = maps_dir / f"{map_name}.json"
+
+    with open(map_path, 'r') as f:
+        map_data = json.load(f)
+
+    print(f"Running single evaluation on {map_name}...")
+    controller = RecedingHorizonController(
+        map_boundary=map_data['map_boundary'],
+        obstacles=map_data['obstacles'],
+        start_point=map_data['start_point'],
+        end_point=map_data['end_point'],
+        N=fixed_params["N"],
+        Ne=fixed_params["Ne"],
+        tau= 0.75,
+        umax=fixed_params["umax"],
+        use_visualizer=True
+    )
+
+    try:
+        start_time = time.time()
+        controller.plan_and_execute()
+        distance_progress = controller.distance_history
+        stuck = False
+        if len(distance_progress) > 5:
+            recent_deltas = np.diff(distance_progress[-5:])
+            stuck = np.all(np.abs(recent_deltas) < 1e-2)
+
+        elapsed = time.time() - start_time
+
+        result = {
+            "map": map_name,
+            "N": fixed_params["N"],
+            "Ne": fixed_params["Ne"],
+            "tau": 0.75,
+            "umax": fixed_params["umax"],
+            "computation_time": elapsed,
+            "arrival_time": controller.arrival_time,
+            "penalty_start": controller.penalty_values[0] if controller.penalty_values else None,
+            "penalty_end": controller.penalty_values[-1] if controller.penalty_values else None,
+            "penalty_rate": (
+                (controller.penalty_values[0] - controller.penalty_values[-1]) / len(controller.penalty_values)
+                if len(controller.penalty_values) > 1 else 0
+            ),
+            "successful": controller.arrival_time is not None,
+            "stuck_near_end": stuck,
+            "varied_param": "none",
+            "notes": "concave map test"
+        }
+
+        # Append to a dedicated file
+        results_dir = Path(__file__).parent / "Sensitivity results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        out_path = results_dir / "sensitivity_single_run.csv"
+
+        if out_path.exists():
+            existing = pd.read_csv(out_path)
+            updated = pd.concat([existing, pd.DataFrame([result])], ignore_index=True)
+        else:
+            updated = pd.DataFrame([result])
+
+        updated.to_csv(out_path, index=False)
+        print(f"Saved result to {out_path}")
+
+    except Exception as e:
+        print(f"Error in single run: {e}")
 
 
 if __name__ == "__main__":
-    main()
+    # Choose if you want to run the full sensitivity analysis or just a single test on a specific map
+    mode = "single"  # or "full"
+
+    if mode == "full":
+        main()
+    elif mode == "single":
+        run_single_test_on_new_map()
+
 

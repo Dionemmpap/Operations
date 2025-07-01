@@ -1,16 +1,14 @@
+# trajectory-planning/src/plot_sensitivity.py
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
-import os
 from pathlib import Path
 
 # Set which variable you're analyzing
 VARY = "umax"  # Change to: "N", "Ne", or "umax" as needed
 
-# Define the root path
+# Define the paths
 ROOT = Path(__file__).parent
-
-# Path to the CSV
 csv_path = ROOT / "Sensitivity results" / f"sensitivity_{VARY}_with_maps.csv"
 
 # Output folder for figures
@@ -24,7 +22,7 @@ df = pd.read_csv(csv_path)
 metrics = ["computation_time", "arrival_time", "penalty_start", "penalty_rate"]
 map_order = ["easy_map_sa", "baseline_map_sa", "hard_map_sa"]
 
-# Plotting
+# Plot the results
 sns.set(style="whitegrid")
 
 for metric in metrics:

@@ -17,7 +17,7 @@ def main():
         loader = MapLoader(maps_dir=Path(__file__).parent.parent / 'maps')
         
         # Load the scenarios.json file directly (since it's not in a subdirectory)
-        map_path = Path(__file__).parent.parent / 'maps' / 'scenarios'/ 'sensitivity analysis'/ 'hard_map_sa.json'
+        map_path = Path(__file__).parent.parent / 'maps' / 'scenarios'/ 'sensitivity analysis'/ 'complex_map.json'
         
         # Check if file exists
         if not map_path.exists():
@@ -44,7 +44,7 @@ def main():
     
     visualize_map(map_boundary=map_boundary, obstacles=obstacles, graph={}, end_point=end_point)
 
-    controller = RecedingHorizonController(map_boundary, obstacles, start_point, end_point,tau=0.5)
+    controller = RecedingHorizonController(map_boundary, obstacles, start_point, end_point,tau=0.75)
     controller.plan_and_execute()
     controller.plot_results()
 
