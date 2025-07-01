@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import gurobipy as gp
 from gurobipy import GRB
 import matplotlib.pyplot as plt
@@ -23,12 +24,23 @@ class RecedingHorizonController:
         self.umax = umax  # Max control input
         self.BOUNDARY_MARGIN = 0.1  # Margin for boundary constraints
 
+        #for sensitivity analysis:
+        self.penalty_values = []
+        self.arrival_time = None
+        self.milp_times = []
+        self.total_computation_time = 0.0
+        self.distance_history = []
+
+
+
         # Build visibility graph and compute shortest paths with Dijkstra's
         self.graph, self.points = self._build_visibility_graph()
         self.cost_to_go = self._dijkstra()
         
         self.trajectory = [self.start_point]
         self.distance_covered = 0.0  # Track total distance covered
+        self.distance_history.append(self.distance_covered)
+
         
         # Initialize visualizer if requested
         self.use_visualizer = use_visualizer
@@ -90,6 +102,7 @@ class RecedingHorizonController:
         
         for step in range(max_steps):
             if np.linalg.norm(current_pos - self.end_point) < 2:
+                self.arrival_time = len(self.trajectory) - 1  # Time steps taken to reach goal
                 print("Goal reached!")
                 self.trajectory.append(self.end_point)
                 # Final visualization update
@@ -125,6 +138,8 @@ class RecedingHorizonController:
 
         if step == max_steps - 1:
             print("Max steps reached, terminating.")
+
+        self.total_computation_time = sum(self.milp_times)
             
         # Close the visualizer when done
         if self.use_visualizer:
@@ -257,9 +272,21 @@ class RecedingHorizonController:
         # --- Solve the Model ---
         model.optimize()
 
+        start_time = time.time()
+        model.optimize()
+        end_time = time.time()
+        self.milp_times.append(end_time - start_time)
+
         if model.status == GRB.OPTIMAL:
+
+            # Extract terminal penalty components
+            penalty = dist_sq.X + c_vis.X + effort.getValue() * 0.01
+            self.penalty_values.append(penalty)
+
             trajectory = np.array([[x[t, 0].X, x[t, 1].X] for t in range(self.N + 1)])
             return trajectory
+        
+    
         else:
             print("Final optimization failed.")
             return None
