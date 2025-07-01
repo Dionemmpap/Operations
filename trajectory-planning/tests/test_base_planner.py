@@ -9,6 +9,7 @@ from src.utils.geometry import is_path_blocked
 from src.utils.obstacles import get_obstacles, merge_intersecting_obstacles
 from src.planners.base_planner import TrajectoryDesignBase as TrajectoryDesign
 
+
 #helper function to calculate distance between two points
 def distance(point1, point2):
     """ Calculate the Euclidean distance between two points. """
@@ -20,6 +21,7 @@ obstacles = [[[2, 2], [4, 2], [4, 4], [2, 4]], [[6, 6], [8, 6], [8, 8], [6, 8]]]
 end_point = [9, 9]
 start_point = [0, 0]
 tau = 1
+
 
 def test_build_graph():
     """Test the build_graph method by checking the graph structure."""	
@@ -154,3 +156,24 @@ def test_plan_trajectory():
     initial_distance = np.linalg.norm(np.array(current_position) - np.array(end_point))
     new_distance = np.linalg.norm(np.array(point) - np.array(end_point))
     assert new_distance < initial_distance
+    
+def test_receding_horizon():
+    """Test the receding horizon trajectory planning logic."""
+    # Set up the test data
+    end_point = [10, 10]
+    obstacles = [[[2, 2], [4, 2], [4, 4], [2, 4]]]
+    tau = 0.1
+
+    td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
+    td.receding_horizon()
+
+
+    # Assertions
+    assert isinstance(td.trajectory, list)
+    assert all(isinstance(point, np.ndarray) for point in td.trajectory)
+    assert len(td.trajectory) > 0
+    assert all(len(point) == 2 for point in td.trajectory)
+    assert all(isinstance(point[0], (int, float, np.int32)) and isinstance(point[1], (int, float, np.int32)) for point in td.trajectory)
+    assert all(0 <= point[0] <= 10 and 0 <= point[1] <= 10 for point in td.trajectory)
+    diff_traj = np.diff(td.trajectory, axis=0)
+    assert np.all(np.diff(td.trajectory, axis=0) > 0)  # Ensure the trajectory is monotonically increasing

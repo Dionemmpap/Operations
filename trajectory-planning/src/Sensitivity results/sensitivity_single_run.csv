@@ -1,0 +1,3 @@
+map,N,Ne,tau,umax,computation_time,arrival_time,penalty_start,penalty_end,penalty_rate,successful,stuck_near_end,varied_param,notes
+complex_map,30,3,0.75,1.0,120.605952501297,129,24.494306646919213,0.0025352318910550425,0.5695760794192595,True,False,none,concave map test
+hard_map_sa,30,3,0.75,1.0,41.335893630981445,105.0,24.49430656744089,0.0027213665477577842,0.6997595771683752,True,False,hard_map_sa
