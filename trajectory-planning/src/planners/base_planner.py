@@ -76,7 +76,7 @@ class TrajectoryDesignBase():
         return shortest
 
     def receding_horizon(self):
-        current_position = self.start_point
+        current_position = np.array(self.start_point)
         self.trajectory = []
         self.trajectory.append(current_position)  # Add starting point to trajectory
         

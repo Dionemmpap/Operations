@@ -9,7 +9,6 @@ from src.utils.geometry import is_path_blocked
 from src.utils.obstacles import get_obstacles, merge_intersecting_obstacles
 from src.planners.base_planner import TrajectoryDesignBase as TrajectoryDesign
 
-@pytest.fixture(scope='module')
 
 #helper function to calculate distance between two points
 def distance(point1, point2):
@@ -23,7 +22,7 @@ end_point = [9, 9]
 start_point = [0, 0]
 tau = 1
 
-# @pytest.fixture(scope='module')
+
 def test_build_graph():
     """ Test the build_graph method by checking the distances between the generated nodes. """	
     td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
@@ -150,11 +149,13 @@ def test_receding_horizon():
     td = TrajectoryDesign(map_boundary, obstacles, end_point, start_point, tau)
     td.receding_horizon()
 
+
     # Assertions
     assert isinstance(td.trajectory, list)
     assert all(isinstance(point, np.ndarray) for point in td.trajectory)
     assert len(td.trajectory) > 0
     assert all(len(point) == 2 for point in td.trajectory)
-    assert all(isinstance(point[0], (int, float)) and isinstance(point[1], (int, float)) for point in td.trajectory)
+    assert all(isinstance(point[0], (int, float, np.int32)) and isinstance(point[1], (int, float, np.int32)) for point in td.trajectory)
     assert all(0 <= point[0] <= 10 and 0 <= point[1] <= 10 for point in td.trajectory)
+    diff_traj = np.diff(td.trajectory, axis=0)
     assert np.all(np.diff(td.trajectory, axis=0) > 0)  # Ensure the trajectory is monotonically increasing
