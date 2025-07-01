@@ -1,12 +1,10 @@
 {
-  "name": "Simple Basic Map",
-  "description": "-",
-  "map_boundary": [[0, 0], [0, 30], [50, 30], [50, 0]],
-  "start_point": [1, 5],
-  "end_point": [35, 17],
+  "name": "Simple Basic Map (Scaled)",
+  "description": "Basic map with a single obstacle",
+  "map_boundary": [[0, 0], [0, 9], [15, 9], [15, 0]],
+  "start_point": [0.3, 1.5],
+  "end_point": [10.5, 5.1],
   "obstacles": [
-    [[15, 10], [15, 20], [30, 20], [30, 10]]
-    
-    
+    [[4.5, 3], [4.5, 6], [9, 6], [9, 3]]
   ]
 }

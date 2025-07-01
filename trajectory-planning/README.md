@@ -6,25 +6,39 @@ This project implements a trajectory planning system using Mixed Integer Linear 
 
 ```
 trajectory-planning
-├── src
-│   ├── planners
+├── README.md
+├── requirements.txt
+├── examples/
+│   └── simple_planning.py
+├── maps/
+│   └── scenarios/
+│       ├── basic_map.json
+│       ├── paper_validation.json
+│       └── sensitivity analysis/
+│           ├── complex_map.json
+│           ├── easy_map_sa.json
+│           └── hard_map_sa.json
+├── src/
+│   ├── main.py
+│   ├── plot_sensitivity.py
+│   ├── sensitivity.py
+│   ├── figures/
+│   ├── planners/
 │   │   ├── __init__.py
 │   │   ├── base_planner.py
-│   │   └── milp_planner.py
-│   ├── utils
-│   │   ├── __init__.py
-│   │   ├── geometry.py
-│   │   ├── visualization.py
-│   │   └── obstacles.py
-│   └── main.py
-├── tests
-│   ├── __init__.py
-│   ├── test_milp_planner.py
-│   └── test_geometry.py
-├── examples
-│   └── simple_planning.py
-├── requirements.txt
-└── README.md
+│   │   ├── planner_chapter2.py
+│   │   └── planner_chapter3.py
+│   ├── Sensitivity results/
+│   └── utils/
+│       ├── __init__.py
+│       ├── geometry.py
+│       ├── map_loader.py
+│       ├── obstacles.py
+│       └── visualization.py
+└── tests/
+    ├── __init__.py
+    ├── conftest.py
+    └── test_planner_chapter2.py
 ```
 
 ## Installation
@@ -45,24 +59,98 @@ To run the trajectory planning application, execute the main script:
 python src/main.py
 ```
 
-You will be prompted to choose the MILP planner for trajectory planning. The application will visualize the environment, including obstacles and the planned trajectory.
+Collecting workspace information# Trajectory Planning with MILP
+
+This project implements a trajectory planning system using Mixed Integer Linear Programming (MILP) to handle dynamic feasibility constraints. The system is designed to plan trajectories in environments with obstacles, ensuring that the planned paths are both efficient and safe.
+
+## Project Structure
+
+```
+trajectory-planning
+├── README.md
+├── requirements.txt
+├── examples/
+│   └── simple_planning.py
+├── maps/
+│   └── scenarios/
+│       ├── basic_map.json
+│       ├── paper_validation.json
+│       └── sensitivity analysis/
+│           ├── complex_map.json
+│           ├── easy_map_sa.json
+│           └── hard_map_sa.json
+├── src/
+│   ├── main.py
+│   ├── plot_sensitivity.py
+│   ├── sensitivity.py
+│   ├── figures/
+│   ├── planners/
+│   │   ├── __init__.py
+│   │   ├── base_planner.py
+│   │   ├── planner_chapter2.py
+│   │   └── planner_chapter3.py
+│   ├── Sensitivity results/
+│   └── utils/
+│       ├── __init__.py
+│       ├── geometry.py
+│       ├── map_loader.py
+│       ├── obstacles.py
+│       └── visualization.py
+└── tests/
+    ├── __init__.py
+    ├── conftest.py
+    └── test_planner_chapter2.py
+```
+
+## Installation
+
+To set up the project, clone the repository and install the required dependencies:
+
+```bash
+git clone <repository-url>
+cd trajectory-planning
+pip install -r requirements.txt
+```
+
+## Usage
+
+To run the trajectory planning application, execute the main script:
+
+```bash
+python src/main.py
+```
+
+The application will load a map configuration, run the receding horizon controller, and visualize the environment, including obstacles and the planned trajectory.
+
+## Sensitivity Analysis
+
+The project includes functionality for sensitivity analysis of various planning parameters:
+
+```bash
+python src/sensitivity.py
+```
+
+This will run experiments with different parameter values (N, Ne, tau, umax) and save the results. You can then visualize the results using:
+
+```bash
+python src/plot_sensitivity.py
+```
+
+## Maps
+
+The `maps/scenarios/` directory contains several JSON map configurations:
+- basic_map.json: A simple environment with minimal obstacles
+- paper_validation.json: Complex environment for validation
+- `sensitivity analysis/`: Maps specifically designed for sensitivity analysis
 
 ## Testing
 
-Unit tests are provided to ensure the functionality of the MILP planner and geometric utilities. To run the tests, use:
+Unit tests are provided to ensure the functionality of the planners and geometric utilities. To run the tests, use:
 
 ```bash
-pytest tests/
+pytest trajectory-planning/tests/
 ```
-
-## Examples
-
-An example of how to use the trajectory planning functionality can be found in the `examples/simple_planning.py` file. This script demonstrates a simple planning scenario with predefined obstacles and a start and end point.
-
-## Contributing
-
-Contributions are welcome! Please submit a pull request or open an issue for any enhancements or bug fixes.
 
 ## License
 
-This project is licensed under the MIT License. See the LICENSE file for details.
+To be chosen

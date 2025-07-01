@@ -1,13 +1,12 @@
 {
-  "name": "Simple Basic Map",
-  "description": "-",
-  "map_boundary": [[0, 0], [0, 64], [100, 64], [100, 0]],
-  "start_point": [10, 38],
-  "end_point": [90, 35],
+  "name": "Kinodynamically Feasible Trajectory Map",
+  "description": "Map used to test the generation of kinodynamically feasible trajectories in chapter 3",
+  "map_boundary": [[0, 0], [0, 20], [31.25, 20], [31.25, 0]],
+  "start_point": [3.125, 11.875],
+  "end_point": [28.125, 10.9375],
   "obstacles": [
-    [[39, 50], [39, 63.80], [60, 63.80], [60, 50]],
-    [[53, 28],[53, 42],[74.07, 42],[74.07, 28]],
-    [[46,  3],[46, 18],[60, 18],[60,  3]]
-    
+    [[12.1875, 15.625], [12.1875, 19.94], [18.75, 19.94], [18.75, 15.625]],
+    [[16.5625, 8.75], [16.5625, 13.125], [23.15, 13.125], [23.15, 8.75]],
+    [[14.375, 0.94], [14.375, 5.625], [18.75, 5.625], [18.75, 0.94]]
   ]
 }
