@@ -123,6 +123,10 @@ class RecedingHorizonController:
                     heading = np.arctan2(direction[1], direction[0])
                 
                 self._update_visualization(current_pos, self.trajectory[-50:], planned_path, heading)
+                # Check if visualization was manually terminated
+                if not self.visualizer.running:
+                    print("Planning terminated by user")
+                    break
 
             # Execute the first Ne steps
             next_pos = planned_path[self.Ne]

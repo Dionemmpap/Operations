@@ -3,32 +3,51 @@ import pygame
 import numpy as np
 import time
 
-def visualize_map(map_boundary, obstacles, graph, end_point):
+def visualize_map(map_boundary, obstacles, graph, end_point, start_point=None):
     """Visualize the map, obstacles, and network."""
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(10, 8))
 
     # Plot map boundary
     boundary_x, boundary_y = zip(*map_boundary + [map_boundary[0]])
-    ax.plot(boundary_x, boundary_y, color='black', label='Boundary')
+    ax.plot(boundary_x, boundary_y, color='black', linewidth=1.5, label='Boundary')
 
-    # Plot obstacles
+    # Plot obstacles - single color for all obstacles
     for i, obstacle in enumerate(obstacles):
         obstacle_x, obstacle_y = zip(*obstacle + [obstacle[0]])
-        ax.plot(obstacle_x, obstacle_y, label=f'Obstacle {i+1}', linestyle='--')
+        ax.fill(obstacle_x, obstacle_y, color='lightgray', alpha=0.5)
+        ax.plot(obstacle_x, obstacle_y, color='gray', linestyle='--')
+    
+    # Only add one legend entry for obstacles
+    if obstacles:
+        ax.plot([], [], color='gray', linestyle='--', label='Obstacles')
 
     # Plot graph edges
-    for node, neighbors in graph.items():
-        for neighbor in neighbors:
-            ax.plot(
-                [node[0], neighbor[0]], [node[1], neighbor[1]], color='blue', alpha=0.5
-            )
+    if graph:
+        for node, neighbors in graph.items():
+            for neighbor in neighbors:
+                ax.plot(
+                    [node[0], neighbor[0]], [node[1], neighbor[1]], 
+                    color='blue', alpha=0.5
+                )
+        # Add one legend entry for visibility graph
+        ax.plot([], [], color='blue', alpha=0.7, label='Visibility Graph')
 
     # Plot end point
-    ax.scatter(*end_point, color='red', label='Endpoint')
+    ax.scatter(*end_point, color='red', s=100, label='Goal')
+    
+    # Plot start point if provided
+    if start_point:
+        ax.scatter(*start_point, color='green', s=100, label='Start')
 
+    # Set equal aspect ratio for proper scaling
     ax.set_aspect('equal')
-    plt.legend()
-    plt.title("Map with Obstacles and Network")
+    
+    # Move legend outside to the right
+    ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    
+    plt.title("Map with Obstacles")
+    plt.tight_layout()
+    
     plt.show()
 
 class PlannerVisualizer:
@@ -177,26 +196,21 @@ class PlannerVisualizer:
             pygame.draw.circle(self.screen, color, point, 2)
         
     def update(self, vehicle_pos, obstacles, actual_trajectory=None, predicted_trajectory=None, map_boundary=None, debug_info=None):
-        """
-        Update the visualization with new data
-        
-        Args:
-            vehicle_pos: (x, y, heading) of the vehicle
-            obstacles: List of obstacles (either circles or polygons)
-            actual_trajectory: List of (x, y) points showing past trajectory
-            predicted_trajectory: List of (x, y) points showing predicted future trajectory
-            map_boundary: List of (x, y) points defining the map boundary
-            debug_info: Dictionary of debug information to display
-        """
+        """Update the visualization with new data"""
         # Handle events
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
-                
+            # Add keyboard event handling
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE or event.key == pygame.K_q:
+                    self.running = False
+                    print("Visualization manually terminated")
+    
         if not self.running:
-            return False
-                
-        # Clear screen
+            return
+        
+        # Fill background
         self.screen.fill(self.background_color)
         
         # Draw map boundary if provided
@@ -218,6 +232,11 @@ class PlannerVisualizer:
         self.draw_vehicle(vehicle_pos[0], vehicle_pos[1], 
                          vehicle_pos[2] if len(vehicle_pos) > 2 else 0)
         
+        # Add exit message at the bottom of the screen
+        font = pygame.font.SysFont(None, 24)  # Default font, size 24
+        exit_msg = font.render("Press ESC or Q to exit", True, (255, 0, 0))  # Red text
+        self.screen.blit(exit_msg, (10, self.height - 30))  # Position near bottom
+    
         # Display debug information
         if debug_info:
             font = pygame.font.SysFont('Arial', 16)
@@ -228,10 +247,11 @@ class PlannerVisualizer:
                 self.screen.blit(text_surface, (10, y_offset))
                 y_offset += 20
         
-        # Update display
+        # Update the display
         pygame.display.flip()
-        # Control frame rate
-        self.clock.tick(20)  # Limit to 20 frames per second
+        
+        # Limit framerate
+        self.clock.tick(20)  # 20 FPS
         return True
         
     def close(self):
