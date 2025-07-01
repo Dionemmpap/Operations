@@ -30,7 +30,7 @@ class RecedingHorizonController:
         self.trajectory = [self.start_point]
         self.distance_covered = 0.0  # Track total distance covered
         
-        # Initialize visualizer if requested
+        # Initialize visualizer 
         self.use_visualizer = use_visualizer
         if self.use_visualizer:
             self.visualizer = PlannerVisualizer(width=800, height=800)
@@ -54,7 +54,6 @@ class RecedingHorizonController:
         for i, p1 in enumerate(points):
             for j, p2 in enumerate(points):
                 if i >= j: continue
-                # if not is_path_blocked(p1, p2, self.obstacles):
                 dist = np.linalg.norm(np.array(p1) - np.array(p2))
                 graph[tuple(p1)][tuple(p2)] = dist
                 graph[tuple(p2)][tuple(p1)] = dist
@@ -155,7 +154,6 @@ class RecedingHorizonController:
             "Position": f"({current_pos[0]:.2f}, {current_pos[1]:.2f})"
         }
         
-        # Debug print
         print(f"Vehicle at {current_pos}, distance to goal: {distance_to_goal:.2f}, total distance: {self.distance_covered:.2f}")
         
         # Update the visualization
